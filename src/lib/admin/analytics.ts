@@ -2,7 +2,7 @@ import "server-only";
 import { supabaseServer } from "../supabase/server";
 import type { Range } from "./types";
 
-type Ev = { name: string; props: Record<string, unknown>; path: string | null; referrer: string | null; utm: Record<string, string> };
+type Ev = { name: string; props: Record<string, unknown>; path: string | null; referrer: string | null; utm: Record<string, string>; country: string | null };
 
 export type ProductStat = { slug: string; name: string; views: number; wishlist: number; carts: number; units: number; revenue: number; conversion: number };
 
@@ -10,6 +10,7 @@ export type Analytics = {
   funnel: { step: string; count: number }[];
   products: ProductStat[];
   sources: { source: string; sessions: number }[];
+  countries: { country: string; sessions: number; orders: number; revenue: number }[];
   searches: { q: string; count: number; zero: number }[];
   posts: { slug: string; title: string; views: number }[];
   totalEvents: number;
@@ -40,8 +41,8 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
   const from = range.from.toISOString();
   const to = range.to.toISOString();
   const [{ data: evs }, { data: orders }, { data: prods }, { data: posts }] = await Promise.all([
-    sb.from("analytics_events").select("name, props, path, referrer, utm").gte("created_at", from).lt("created_at", to).order("created_at", { ascending: false }).limit(LIMIT),
-    sb.from("orders").select("id, status, order_items(quantity, unit_price, products(slug))").gte("created_at", from).lt("created_at", to).in("status", ["paid", "packing", "shipped", "delivered"]),
+    sb.from("analytics_events").select("name, props, path, referrer, utm, country").gte("created_at", from).lt("created_at", to).order("created_at", { ascending: false }).limit(LIMIT),
+    sb.from("orders").select("id, status, country, total, refunded_amount, order_items(quantity, unit_price, products(slug))").gte("created_at", from).lt("created_at", to).in("status", ["paid", "packing", "shipped", "delivered"]),
     sb.from("products").select("slug, name").eq("status", "active"),
     sb.from("journal_posts").select("slug, title").eq("status", "published"),
   ]);
@@ -84,6 +85,16 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
   const srcMap = new Map<string, number>();
   for (const e of firstBySession.values()) srcMap.set(sourceOf(e), (srcMap.get(sourceOf(e)) ?? 0) + 1);
 
+  // Countries: sessions (first page view) vs orders
+  const ctry = new Map<string, { country: string; sessions: number; orders: number; revenue: number }>();
+  const row = (c: string) => ctry.get(c) ?? (ctry.set(c, { country: c, sessions: 0, orders: 0, revenue: 0 }), ctry.get(c)!);
+  for (const e of firstBySession.values()) row(e.country ?? "??").sessions++;
+  for (const o of (orders ?? []) as unknown as { country: string; total: number; refunded_amount: number }[]) {
+    const r = row(o.country);
+    r.orders++;
+    r.revenue += o.total - o.refunded_amount;
+  }
+
   // Searches
   const searchMap = new Map<string, { q: string; count: number; zero: number }>();
   for (const e of events.filter((x) => x.name === "search")) {
@@ -106,6 +117,7 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
   return {
     funnel,
     products: [...stats.values()].sort((a, b) => b.revenue - a.revenue || b.views - a.views),
+    countries: [...ctry.values()].sort((a, b) => b.sessions - a.sessions || b.revenue - a.revenue),
     sources: [...srcMap.entries()].map(([source, sessions]) => ({ source, sessions })).sort((a, b) => b.sessions - a.sessions),
     searches: [...searchMap.values()].sort((a, b) => b.count - a.count).slice(0, 20),
     posts: [...postMap.entries()].map(([slug, views]) => ({ slug, title: titles.get(slug) ?? slug, views })).sort((a, b) => b.views - a.views),

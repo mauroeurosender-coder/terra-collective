@@ -5,11 +5,12 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { mergeSettings } from "@/lib/settings";
 import { countries } from "@/lib/geo";
 import { NotConnected, PageHeader, Card } from "@/components/admin/ui";
+import { TestDataPanel } from "@/components/admin/test-data-panel";
 import { EmailsEditor, PaymentsEditor, ShippingEditor, StaffEditor, StoreEditor, VatEditor } from "@/components/admin/settings-editors";
 
 export const metadata = { title: "Settings" };
 
-const tabs = [["store", "Store"], ["shipping", "Shipping"], ["taxes", "Taxes"], ["payments", "Payments"], ["emails", "Emails"], ["staff", "Staff"], ["legal", "Languages & legal"]];
+const tabs = [["store", "Store"], ["shipping", "Shipping"], ["taxes", "Taxes"], ["payments", "Payments"], ["emails", "Emails"], ["staff", "Staff"], ["legal", "Languages & legal"], ["test-data", "Test data"]];
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const session = await requireAdmin({ owner: true });
@@ -33,6 +34,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "payments" && <PaymentsEditor initial={s.payments} stripe={!!process.env.STRIPE_SECRET_KEY} />}
       {tab === "emails" && <EmailsEditor initial={s.emails} resend={!!process.env.RESEND_API_KEY} />}
       {tab === "staff" && <StaffEditor staff={staff ?? []} me={session.mode === "live" ? session.userId : null} />}
+      {tab === "test-data" && (
+        <TestDataPanel
+          counts={{
+            orders: (await sb.from("orders").select("id", { count: "exact", head: true }).eq("test", true)).count ?? 0,
+            events: (await sb.from("analytics_events").select("id", { count: "exact", head: true }).eq("props->>test", "true")).count ?? 0,
+          }}
+        />
+      )}
       {tab === "legal" && (
         <div className="space-y-4">
           <Card title="Languages">

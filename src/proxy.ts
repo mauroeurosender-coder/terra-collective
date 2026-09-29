@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { defaultLocale, locales } from "@/lib/config";
 import { countries } from "@/lib/geo";
+import { countryFromHeaders } from "@/lib/server/country";
 
 const currencyFor = (country: string) => (country === "GB" ? "GBP" : country === "US" ? "USD" : "EUR");
 
@@ -13,8 +14,7 @@ function detectLocale(req: NextRequest) {
 }
 
 function detectCountry(req: NextRequest) {
-  const header =
-    req.headers.get("x-vercel-ip-country") ?? req.headers.get("cf-ipcountry") ?? req.headers.get("x-country") ?? "";
+  const header = countryFromHeaders(req.headers) ?? "";
   return countries.some((c) => c.code === header) ? header : null;
 }
 

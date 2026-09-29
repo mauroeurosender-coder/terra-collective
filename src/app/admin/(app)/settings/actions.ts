@@ -50,3 +50,28 @@ export async function removeStaff(userId: string): Promise<Result> {
   revalidatePath("/admin/settings");
   return { ok: true, message: "Access removed. Their login no longer opens the admin." };
 }
+
+/** Generates test orders + visits for one chunk of days (the UI calls this repeatedly). */
+export async function generateTestChunk(fromDaysAgo: number, toDaysAgo: number) {
+  await owner();
+  const { generateTestData } = await import("@/lib/admin/test-data");
+  try {
+    const r = await generateTestData(supabaseService(), Math.min(365, fromDaysAgo), Math.max(0, toDaysAgo));
+    revalidatePath("/admin", "layout");
+    return { ok: true as const, ...r };
+  } catch (e) {
+    return { ok: false as const, error: (e as Error).message };
+  }
+}
+
+export async function clearAllTestData(): Promise<Result> {
+  await owner();
+  const { clearTestData } = await import("@/lib/admin/test-data");
+  try {
+    const r = await clearTestData(supabaseService());
+    revalidatePath("/admin", "layout");
+    return { ok: true, message: `Removed ${r.orders} test orders, ${r.events} test visit events and ${r.customers} test customers.` };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}

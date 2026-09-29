@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { insertRow } from "@/lib/server/persist";
+import { countryFromHeaders } from "@/lib/server/country";
 
 const allowed = new Set(["page_view", "product_view", "wishlist_add", "add_to_cart", "begin_checkout", "purchase", "search", "newsletter_signup"]);
 
@@ -13,7 +14,7 @@ export async function POST(req: Request) {
     path: String(body.path ?? "").slice(0, 300),
     referrer: body.referrer ? String(body.referrer).slice(0, 300) : null,
     utm: body.utm ?? {},
-    country: req.headers.get("x-vercel-ip-country"),
+    country: countryFromHeaders(req.headers),
   });
   return new NextResponse(null, { status: 204 });
 }
