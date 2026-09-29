@@ -5,6 +5,9 @@ import { getAdminSession } from "@/lib/admin/auth";
 import { Logo } from "@/components/illustrations";
 import { LoginForm } from "@/components/admin/login-form";
 
+// Always render per request: the admin depends on the signed-in session.
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Sign in" };
 
 export default async function LoginPage() {

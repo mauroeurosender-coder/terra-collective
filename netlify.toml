@@ -5,3 +5,7 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# Runs Next.js pages, API routes and middleware as Netlify Functions.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
