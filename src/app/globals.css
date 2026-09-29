@@ -218,3 +218,14 @@ body {
     transform: none;
   }
 }
+
+/* Seasonal theme decoration (see src/components/decoration.tsx) */
+@keyframes tc-fall {
+  0% { transform: translate3d(0, -10vh, 0) rotate(0deg); }
+  50% { transform: translate3d(2.5vw, 50vh, 0) rotate(180deg); }
+  100% { transform: translate3d(-1.5vw, 110vh, 0) rotate(360deg); }
+}
+.tc-deco-p { animation: tc-fall linear infinite; will-change: transform; }
+@media (prefers-reduced-motion: reduce) {
+  .tc-deco { display: none; }
+}

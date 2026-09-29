@@ -8,7 +8,7 @@ import type { L } from "@/lib/types";
 
 type Result = { ok: true; message?: string } | { ok: false; error: string };
 
-const contentKeys = new Set(["announcement", "hero", "featured_collections"]);
+const contentKeys = new Set(["announcement", "hero", "featured_collections", "theme"]);
 const ownerKeys = new Set(["shipping", "vat", "payments", "store", "emails"]);
 
 /** Saves one settings row. Content keys: any staff. Store configuration: owner only. */

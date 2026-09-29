@@ -46,6 +46,17 @@ export async function proxy(req: NextRequest) {
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return adminSession(req);
   const hasLocale = locales.some((l) => pathname === `/${l}` || pathname.startsWith(`/${l}/`));
 
+  // ?preview-theme=christmas lets you look at a seasonal theme before it goes live (?preview-theme=off to stop).
+  const preview = req.nextUrl.searchParams.get("preview-theme");
+  if (preview) {
+    const clean = req.nextUrl.clone();
+    clean.searchParams.delete("preview-theme");
+    const r = NextResponse.redirect(clean);
+    if (preview === "off") r.cookies.delete("tc_theme_preview");
+    else if (/^[a-z-]{2,30}$/.test(preview)) r.cookies.set("tc_theme_preview", preview, { path: "/", maxAge: 60 * 60 * 2, sameSite: "lax" });
+    return r;
+  }
+
   let res: NextResponse;
   if (hasLocale) {
     res = NextResponse.next();

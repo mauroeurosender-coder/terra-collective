@@ -7,7 +7,9 @@ import { currencies, isLocale, locales, store, type Currency } from "@/lib/confi
 import { getDictionary } from "@/lib/i18n";
 import { getCollections, getProducts, toLite } from "@/lib/data/catalog";
 import { getCountry } from "@/lib/geo";
-import { getSettings } from "@/lib/data/source";
+import { getActiveTheme, getSettings } from "@/lib/data/source";
+import { ThemePreviewBar } from "@/components/layout/theme-preview-bar";
+import { Decoration } from "@/components/decoration";
 import { Providers } from "@/components/providers";
 import { AnnouncementBar } from "@/components/layout/announcement-bar";
 import { Header } from "@/components/layout/header";
@@ -44,17 +46,21 @@ export default async function LangLayout({ children, params }: LayoutProps<"/[la
   const country = getCountry(jar.get("tc_country")?.value).code;
 
   const dict = getDictionary(lang);
-  const [allCollections, products, settings] = await Promise.all([getCollections(), getProducts(), getSettings()]);
+  const [allCollections, products, settings, theme] = await Promise.all([getCollections(), getProducts(), getSettings(), getActiveTheme()]);
+  const announcement = theme.id !== "default" && (theme.announcement.en || theme.announcement.pt) ? theme.announcement : settings.announcement;
+  const previewing = jar.get("tc_theme_preview")?.value;
   const collections = allCollections.filter((c) => c.featured !== false);
 
   return (
-    <html lang={lang === "pt" ? "pt-PT" : "en"} className={fontVars}>
+    <html lang={lang === "pt" ? "pt-PT" : "en"} className={fontVars} data-theme={theme.id} style={theme.palette as React.CSSProperties}>
       <body className="flex min-h-dvh flex-col">
-        <Providers locale={lang} dict={dict} initialCurrency={currency} initialCountry={country} catalog={products.map(toLite)} settings={{ shipping: settings.shipping, vat: settings.vat, payments: settings.payments, announcement: settings.announcement, store: settings.store }}>
+        <Providers locale={lang} dict={dict} initialCurrency={currency} initialCountry={country} catalog={products.map(toLite)} settings={{ shipping: settings.shipping, vat: settings.vat, payments: settings.payments, announcement, store: settings.store }}>
           <a href="#main" className="sr-only z-[100] rounded-full bg-ink px-4 py-2 text-cream focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
             {dict.nav.skip}
           </a>
+          {previewing && <ThemePreviewBar name={theme.name} />}
           <AnnouncementBar />
+          {theme.decoration !== "none" && <Decoration kind={theme.decoration} />}
           <Header collections={collections} />
           <main id="main" className="flex-1">
             {children}

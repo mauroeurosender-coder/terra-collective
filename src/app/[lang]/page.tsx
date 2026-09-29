@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { store } from "@/lib/config";
 import { fmt, href, t } from "@/lib/i18n";
 import { getCollections, getPosts, getProducts, getReviews } from "@/lib/data/catalog";
-import { getSettings } from "@/lib/data/source";
+import { getActiveTheme, getSettings } from "@/lib/data/source";
 import { resolveLang, toCard } from "@/lib/page";
 import { ProductCard } from "@/components/product/product-card";
 import { Carousel } from "@/components/ui/carousel";
@@ -24,8 +24,11 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
     getPosts(),
     getSettings(),
   ]);
+  const theme = await getActiveTheme();
+  const seasonal = theme.id !== "default";
   const collections = allCollections.filter((c) => c.featured !== false);
-  const hero = settings.hero;
+  // A seasonal theme replaces the hero copy (the image stays the one set in Content).
+  const hero = seasonal ? { ...settings.hero, ...theme.hero } : settings.hero;
   const heroTitle = t(hero.title, lang) || h.heroTitle;
   const allProducts = bestsellers;
   const totalReviews = allProducts.reduce((n, p) => n + p.reviewCount, 0);
@@ -47,7 +50,7 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
             </h1>
             <p className="mt-6 max-w-md text-lg text-ink-soft">{t(hero.body, lang) || h.heroBody}</p>
             <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Link href={href(lang, "/shop")} className="btn-primary">
+              <Link href={href(lang, seasonal ? theme.hero.ctaHref : "/shop")} className="btn-primary">
                 {t(hero.cta, lang) || h.heroCta} <ArrowRight className="h-4 w-4" />
               </Link>
               <Link href={href(lang, "/collections/ceramic-sardines")} className="btn-outline">
@@ -56,6 +59,11 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
             </div>
           </div>
           <div className="relative animate-fade-up [animation-delay:120ms]">
+            {seasonal && t(theme.stamp, lang) && (
+              <span className="absolute -top-4 right-4 z-10 grid h-24 w-24 rotate-12 place-items-center rounded-full bg-azulejo p-2 text-center font-serif text-[0.95rem] leading-tight font-semibold text-white shadow-[var(--shadow-lift)] ring-4 ring-cream md:-top-6 md:right-8 md:h-28 md:w-28 md:text-lg">
+                {t(theme.stamp, lang)}
+              </span>
+            )}
             <div className="mask-pebble relative aspect-[16/12] overflow-hidden bg-azulejo-tint shadow-[var(--shadow-lift)]">
               <Image src={hero.image || "/lifestyle/hero.svg"} alt={lang === "pt" ? "Sardinhas de cerâmica vidrada numa parede azul clara, com uma prateleira de garrafas" : "Glazed ceramic sardines on a pale blue wall above a shelf of oil bottles"} fill priority sizes="(min-width: 768px) 55vw, 100vw" className="object-cover" />
             </div>

@@ -56,7 +56,8 @@ async function fromSupabase(): Promise<Catalog> {
     sb.from("products").select("*, collections(slug), product_media(url, kind, position), variants(*)").eq("status", "active"),
     sb.from("reviews").select("*, products(slug)").eq("status", "approved").order("created_at", { ascending: false }),
     sb.from("journal_posts").select("*").order("publish_at", { ascending: false }),
-    sb.from("settings").select("key, value"),
+    // Server-only read with the service key (when set) so non-public keys like `theme` load; never sent to the browser as a whole.
+    (process.env.SUPABASE_SERVICE_ROLE_KEY ? createClient(url!, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } }) : sb).from("settings").select("key, value"),
     sb.from("pages").select("slug, content"),
   ]);
   for (const r of [cols, prods, revs, posts]) if (r.error) throw r.error;
@@ -132,4 +133,12 @@ async function fromSupabase(): Promise<Catalog> {
     }));
 
   return { collections, products, reviews, journal, settings, pages: pageMap, source: "supabase" };
+}
+
+/** Theme for this request: preview cookie (admin "Preview"), then schedule, then the active theme. */
+export async function getActiveTheme() {
+  const { cookies } = await import("next/headers");
+  const { resolveTheme } = await import("../themes");
+  const preview = (await cookies()).get("tc_theme_preview")?.value ?? null;
+  return resolveTheme((await getSettings()).theme, preview);
 }

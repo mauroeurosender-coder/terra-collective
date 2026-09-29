@@ -5,6 +5,7 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { mergeSettings } from "@/lib/settings";
 import { faq as staticFaq, type FaqGroup } from "@/lib/data/pages";
 import { NotConnected, PageHeader } from "@/components/admin/ui";
+import { ThemesEditor } from "@/components/admin/themes-editor";
 import { AnnouncementEditor, CollectionsEditor, FaqEditor, HeroEditor } from "@/components/admin/content-editors";
 
 export const metadata = { title: "Content" };
@@ -31,7 +32,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
   ]);
   const settings = mergeSettings(sets ?? []);
   const savedFaq = pgs?.find((p) => p.slug === "faq")?.content as FaqGroup[] | undefined;
-  const tabs = [["home", "Homepage"], ["collections", "Collections"], ["faq", "FAQ"], ["pages", "Pages"]];
+  const tabs = [["themes", "Seasonal themes"], ["home", "Homepage"], ["collections", "Collections"], ["faq", "FAQ"], ["pages", "Pages"]];
 
   return (
     <div className="mx-auto max-w-[1080px]">
@@ -41,6 +42,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
           <Link key={k} href={`?tab=${k}`} aria-current={tab === k ? "page" : undefined} className={`rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap ${tab === k ? "bg-ink text-cream" : "bg-paper text-ink-soft hover:text-ink"}`}>{label}</Link>
         ))}
       </nav>
+      {tab === "themes" && <ThemesEditor initial={settings.theme} />}
       {tab === "home" && (
         <div className="space-y-4">
           <AnnouncementEditor initial={settings.announcement} />
