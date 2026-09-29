@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Search } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { countries } from "@/lib/geo";
@@ -52,7 +52,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="mx-auto max-w-[1280px]">
-      <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} />
+      <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link>} />
 
       <nav aria-label="Order status" className="-mx-4 mb-4 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:px-0">
         <ul className="flex gap-1.5">
