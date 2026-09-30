@@ -6,6 +6,8 @@
 import type { L } from "./types";
 import type { Step } from "./data/home-story";
 import { imperfect, places, process, ribbon } from "./data/home-story.ts";
+import en from "./i18n/en";
+import pt from "./i18n/pt";
 
 export type Button = { label: L; href: string };
 export type Pin = { id: string; name: string; lon: number; lat: number; craft: L; note: L };
@@ -13,7 +15,7 @@ export type Pin = { id: string; name: string; lon: number; lat: number; craft: L
 type Base = { id: string; enabled: boolean };
 export type HomeSection = Base &
   (
-    | { type: "hero" }
+    | { type: "hero"; showSeal: boolean }
     | { type: "ribbon"; items: L[] }
     | { type: "collections"; title: L }
     | { type: "process"; eyebrow: L; title: L; intro: L; outro: L; steps: Step[]; showStats: boolean }
@@ -21,7 +23,8 @@ export type HomeSection = Base &
     | { type: "imperfect"; eyebrow: L; title: L; body: L; cta: Button; notes: L[]; images: string[] }
     | { type: "gifts"; title: L }
     | { type: "places"; eyebrow: L; title: L; body: L; pins: Pin[] }
-    | { type: "reviews"; title: L; showInstagram: boolean }
+    | { type: "reviews"; title: L; showInstagram: boolean; style: "postcards" | "cards" }
+    | { type: "story"; eyebrow: L; title: L; body: L; image: string; showStats: boolean }
     | { type: "journal"; title: L }
     | { type: "newsletter"; title: L; body: L }
     | { type: "text"; eyebrow: L; title: L; body: L; button: Button; align: "left" | "center"; background: Background }
@@ -44,7 +47,13 @@ export type Field = { key: string; label: string; kind: FieldKind; hint?: string
 const bg: Field = { key: "background", label: "Background", kind: "select", options: [["cream", "Cream"], ["paper", "White"], ["tint", "Soft colour"], ["blue", "Brand colour"]] };
 
 export const sectionTypes: Record<SectionType, { label: string; description: string; repeatable: boolean; fields: Field[]; make: () => HomeSection }> = {
-  hero: { label: "Hero", description: "Big headline and photo at the top. Edit its text and photo in the Homepage hero panel below.", repeatable: false, fields: [], make: () => ({ id: "hero", enabled: true, type: "hero" }) },
+  hero: {
+    label: "Hero",
+    description: "Big headline and photo at the top. Edit its text and photo in the Homepage hero panel below.",
+    repeatable: false,
+    fields: [{ key: "showSeal", label: "Show the rotating “Handmade in Portugal” seal", kind: "bool" }],
+    make: () => ({ id: "hero", enabled: true, type: "hero", showSeal: true }),
+  },
   ribbon: {
     label: "Scrolling ribbon",
     description: "A moving band of short handwritten phrases.",
@@ -133,9 +142,32 @@ export const sectionTypes: Record<SectionType, { label: string; description: str
     repeatable: false,
     fields: [
       { key: "title", label: "Title", kind: "l", hint: "Leave empty for the default" },
+      { key: "style", label: "Style", kind: "select", options: [["postcards", "Handwritten postcards"], ["cards", "Simple cards"]] },
       { key: "showInstagram", label: "Show the Instagram grid", kind: "bool" },
     ],
-    make: () => ({ id: "reviews", enabled: true, type: "reviews", title: E(), showInstagram: true }),
+    make: () => ({ id: "reviews", enabled: true, type: "reviews", title: E(), showInstagram: true, style: "postcards" }),
+  },
+  story: {
+    label: "Our story (photo + numbers)",
+    description: "Studio photo beside a short story, three numbers and a “Read our story” button.",
+    repeatable: false,
+    fields: [
+      { key: "image", label: "Photo", kind: "image" },
+      { key: "eyebrow", label: "Small heading", kind: "l" },
+      { key: "title", label: "Title", kind: "l" },
+      { key: "body", label: "Text", kind: "lm" },
+      { key: "showStats", label: "Show the three numbers", kind: "bool" },
+    ],
+    make: () => ({
+      id: "story",
+      enabled: true,
+      type: "story",
+      image: "/lifestyle/studio-portrait.svg",
+      eyebrow: { en: en.home.storyEyebrow, pt: pt.home.storyEyebrow },
+      title: { en: en.home.storyTitle, pt: pt.home.storyTitle },
+      body: { en: en.home.storyBody, pt: pt.home.storyBody },
+      showStats: true,
+    }),
   },
   journal: {
     label: "Journal",
@@ -260,4 +292,55 @@ export function normalizeLayout(saved: unknown): HomeSection[] {
       const x = s as HomeSection;
       return { ...sectionTypes[x.type].make(), ...x } as HomeSection;
     });
+}
+
+/** The first homepage design: shop-first, with a single story block and simple review cards. */
+export const classicLayout = (): HomeSection[] =>
+  (["hero", "collections", "bestsellers", "story", "gifts", "reviews", "journal", "newsletter"] as SectionType[]).map((t) => {
+    const s = { ...sectionTypes[t].make(), id: t } as HomeSection;
+    if (s.type === "hero") s.showSeal = false;
+    if (s.type === "reviews") s.style = "cards";
+    return s;
+  });
+
+/* ------------------------------------------------------------------ Designs & A/B tests */
+
+export type HomeDesign = { id: string; name: string; sections: HomeSection[] };
+export type AbTest = { id: string; a: string; b: string; split: number; startedAt: string; stoppedAt?: string | null };
+export type HomeDesigns = { designs: HomeDesign[]; live: string; test: AbTest | null; pastTests?: AbTest[] };
+
+export const defaultDesigns = (legacyLayout?: unknown): HomeDesigns => ({
+  designs: [
+    { id: "handcrafted", name: "Handcrafted", sections: normalizeLayout(legacyLayout) },
+    { id: "classic", name: "Classic", sections: classicLayout() },
+  ],
+  live: "handcrafted",
+  test: null,
+  pastTests: [],
+});
+
+/** Validates saved designs; falls back to the defaults (keeping an older single saved layout as “Handcrafted”). */
+export function normalizeDesigns(saved: unknown, legacyLayout?: unknown): HomeDesigns {
+  const d = saved as HomeDesigns | undefined;
+  if (!d || !Array.isArray(d.designs) || !d.designs.length) return defaultDesigns(legacyLayout);
+  const designs = d.designs.filter((x) => x && x.id && Array.isArray(x.sections)).map((x) => ({ id: x.id, name: x.name || x.id, sections: normalizeLayout(x.sections) }));
+  const ids = new Set(designs.map((x) => x.id));
+  const live = ids.has(d.live) ? d.live : designs[0].id;
+  const test = d.test && ids.has(d.test.a) && ids.has(d.test.b) && !d.test.stoppedAt ? d.test : null;
+  return { designs, live, test, pastTests: d.pastTests ?? [] };
+}
+
+/**
+ * Which design this visitor sees. Preview wins; then, while a test runs, the
+ * visitor's stable bucket (0–99, only set after analytics consent) picks A or B;
+ * everyone else sees the live design.
+ */
+export function pickDesign(d: HomeDesigns, opts: { preview?: string | null; bucket?: number | null }) {
+  const find = (id: string) => d.designs.find((x) => x.id === id) ?? d.designs[0];
+  if (opts.preview && d.designs.some((x) => x.id === opts.preview)) return { design: find(opts.preview), variant: null as null | "a" | "b" };
+  if (d.test && opts.bucket != null && opts.bucket >= 0 && opts.bucket < 100) {
+    const variant: "a" | "b" = opts.bucket < d.test.split ? "a" : "b";
+    return { design: find(variant === "a" ? d.test.a : d.test.b), variant };
+  }
+  return { design: find(d.live), variant: null };
 }

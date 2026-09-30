@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { insertRow } from "@/lib/server/persist";
 import { countryFromHeaders } from "@/lib/server/country";
 
-const allowed = new Set(["page_view", "product_view", "wishlist_add", "add_to_cart", "begin_checkout", "purchase", "search", "newsletter_signup"]);
+const allowed = new Set(["page_view", "product_view", "wishlist_add", "add_to_cart", "begin_checkout", "purchase", "search", "newsletter_signup", "ab_exposure"]);
 
 /** First-party, cookie-consented analytics sink. No IPs or user agents are stored. */
 export async function POST(req: Request) {

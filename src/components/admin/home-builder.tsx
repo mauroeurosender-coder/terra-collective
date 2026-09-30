@@ -9,7 +9,6 @@ import type { L } from "@/lib/types";
 import type { Step } from "@/lib/data/home-story";
 import { defaultHomeLayout, sectionTypes, towns, type Button, type Field, type HomeSection, type Pin, type SectionType } from "@/lib/home-layout";
 import { uploadMedia } from "@/lib/supabase/upload";
-import { saveSetting } from "@/app/admin/(app)/content/actions";
 import { ImageField, LField, useSave } from "./fields";
 import { Card } from "./ui";
 
@@ -18,7 +17,7 @@ const icons: [Step["icon"], string][] = [["clay", "Clay"], ["dry", "Drying rack"
 
 type Product = { slug: string; name: string };
 
-export function HomeBuilder({ initial, products }: { initial: HomeSection[]; products: Product[] }) {
+export function HomeBuilder({ initial, products, title, onSave }: { initial: HomeSection[]; products: Product[]; title: string; onSave: (sections: HomeSection[]) => Promise<{ ok: boolean; error?: string; message?: string }> }) {
   const router = useRouter();
   const [sections, setSections] = useState(initial);
   const [open, setOpen] = useState<string | null>(null);
@@ -43,10 +42,10 @@ export function HomeBuilder({ initial, products }: { initial: HomeSection[]; pro
 
   return (
     <Card
-      title="Homepage sections"
-      action={<a href="/en" target="_blank" rel="noopener" className="text-sm font-medium text-azulejo hover:underline">View homepage ↗</a>}
+      title={title}
+      
     >
-      <p className="mb-4 text-sm text-ink-soft">Reorder, hide, edit or remove sections, and add new ones. Changes go live when you click <b>Save homepage</b>.</p>
+      <p className="mb-4 text-sm text-ink-soft">Reorder, hide, edit or remove sections, and add new ones. Click <b>Save design</b> to keep your changes. If this design is live (or in an A/B test), visitors see them straight away.</p>
       <ol className="space-y-2">
         {sections.map((s, i) => {
           const meta = sectionTypes[s.type];
@@ -120,8 +119,8 @@ export function HomeBuilder({ initial, products }: { initial: HomeSection[]; pro
       )}
 
       <div className="sticky bottom-0 z-10 -mx-5 mt-6 flex flex-wrap items-center gap-3 border-t border-line bg-paper/95 px-5 py-3 backdrop-blur md:-mx-6 md:px-6">
-        <button type="button" disabled={save.pending || !dirty} onClick={() => save.run(() => saveSetting("home_layout", sections), () => { setDirty(false); router.refresh(); })} className="btn-primary min-h-10 py-2 text-sm">
-          {save.pending && <Loader2 className="h-4 w-4 animate-spin" />} Save homepage
+        <button type="button" disabled={save.pending || !dirty} onClick={() => save.run(() => onSave(sections), () => { setDirty(false); router.refresh(); })} className="btn-primary min-h-10 py-2 text-sm">
+          {save.pending && <Loader2 className="h-4 w-4 animate-spin" />} Save design
         </button>
         <button type="button" onClick={() => confirm("Reset the homepage to the original sections and texts? (Not saved until you click Save.)") && update(defaultHomeLayout())} className="btn min-h-10 px-4 py-2 text-sm hover:bg-ink/5"><RotateCcw className="h-4 w-4" /> Reset to original</button>
         {dirty ? <span className="text-sm text-ink-soft">Unsaved changes</span> : <save.Status />}

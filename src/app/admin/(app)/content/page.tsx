@@ -6,8 +6,9 @@ import { mergeSettings } from "@/lib/settings";
 import { faq as staticFaq, type FaqGroup } from "@/lib/data/pages";
 import { NotConnected, PageHeader } from "@/components/admin/ui";
 import { ThemesEditor } from "@/components/admin/themes-editor";
-import { HomeBuilder } from "@/components/admin/home-builder";
-import { normalizeLayout } from "@/lib/home-layout";
+import { HomeDesignsManager } from "@/components/admin/home-designs";
+import { normalizeDesigns } from "@/lib/home-layout";
+import { getAbResults } from "@/lib/admin/ab-results";
 import { AnnouncementEditor, CollectionsEditor, FaqEditor, HeroEditor } from "@/components/admin/content-editors";
 
 export const metadata = { title: "Content" };
@@ -34,6 +35,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
     sb.from("products").select("slug, name").eq("status", "active").order("bestseller_rank"),
   ]);
   const settings = mergeSettings(sets ?? []);
+  const designs = normalizeDesigns(settings.home_designs, settings.home_layout);
   const savedFaq = pgs?.find((p) => p.slug === "faq")?.content as FaqGroup[] | undefined;
   const tabs = [["themes", "Seasonal themes"], ["home", "Homepage"], ["collections", "Collections"], ["faq", "FAQ"], ["pages", "Pages"]];
 
@@ -49,7 +51,7 @@ export default async function ContentPage({ searchParams }: { searchParams: Prom
       {tab === "home" && (
         <div className="space-y-4">
           <AnnouncementEditor initial={settings.announcement} />
-          <HomeBuilder initial={normalizeLayout(settings.home_layout)} products={(prods ?? []).map((p: any) => ({ slug: p.slug, name: p.name.en }))} />
+          <HomeDesignsManager initial={designs} results={designs.test ? await getAbResults(sb, designs.test) : null} products={(prods ?? []).map((p: any) => ({ slug: p.slug, name: p.name.en }))} />
           <HeroEditor initial={settings.hero} />
         </div>
       )}

@@ -47,6 +47,15 @@ export async function proxy(req: NextRequest) {
   const hasLocale = locales.some((l) => pathname === `/${l}` || pathname.startsWith(`/${l}/`));
 
   // ?preview-theme=christmas lets you look at a seasonal theme before it goes live (?preview-theme=off to stop).
+  const previewHome = req.nextUrl.searchParams.get("preview-home");
+  if (previewHome) {
+    const clean = req.nextUrl.clone();
+    clean.searchParams.delete("preview-home");
+    const r = NextResponse.redirect(clean);
+    if (previewHome === "off") r.cookies.delete("tc_home_preview");
+    else if (/^[a-z0-9-]{2,40}$/.test(previewHome)) r.cookies.set("tc_home_preview", previewHome, { path: "/", maxAge: 60 * 60 * 2, sameSite: "lax" });
+    return r;
+  }
   const preview = req.nextUrl.searchParams.get("preview-theme");
   if (preview) {
     const clean = req.nextUrl.clone();
@@ -77,6 +86,10 @@ export async function proxy(req: NextRequest) {
     if (!req.cookies.get("tc_currency")) {
       res.cookies.set("tc_currency", currencyFor(country), { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
     }
+  }
+  // A/B bucket: a random number 0–99 kept for a year, only for visitors who accepted analytics cookies.
+  if (req.cookies.get("tc_consent")?.value === "all" && !req.cookies.get("tc_bucket")) {
+    res.cookies.set("tc_bucket", String(Math.floor(Math.random() * 100)), { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
   }
   return res;
 }

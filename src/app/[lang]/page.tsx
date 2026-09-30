@@ -7,7 +7,10 @@ import { fmt, href, t } from "@/lib/i18n";
 import { getCollections, getPosts, getProducts, getReviews } from "@/lib/data/catalog";
 import { getActiveTheme, getSettings } from "@/lib/data/source";
 import { resolveLang, toCard } from "@/lib/page";
-import { normalizeLayout, type Background, type Button, type HomeSection } from "@/lib/home-layout";
+import { normalizeDesigns, pickDesign, type Background, type Button, type HomeSection } from "@/lib/home-layout";
+import { cookies } from "next/headers";
+import { AbExposure } from "@/components/home/ab-exposure";
+import { TileMotif } from "@/components/illustrations";
 import { seal } from "@/lib/data/home-story";
 import type { L } from "@/lib/types";
 import { ProductCard } from "@/components/product/product-card";
@@ -47,7 +50,12 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
   const allProducts = bestsellers;
   const totalReviews = allProducts.reduce((n, p) => n + p.reviewCount, 0);
   const avg = totalReviews ? allProducts.reduce((n, p) => n + p.rating * p.reviewCount, 0) / totalReviews : 5;
-  const layout = normalizeLayout(settings.home_layout).filter((s) => s.enabled);
+  const jar = await cookies();
+  const designs = normalizeDesigns(settings.home_designs, settings.home_layout);
+  const bucketRaw = jar.get("tc_bucket")?.value;
+  const { design, variant } = pickDesign(designs, { preview: jar.get("tc_home_preview")?.value, bucket: bucketRaw != null ? Number(bucketRaw) : null });
+  const layout = design.sections.filter((s) => s.enabled);
+  const previewing = jar.get("tc_home_preview")?.value;
 
   const tx = (l: L | undefined, fallback = "") => (l ? t(l, lang) : "") || fallback;
   const btn = (b: Button, cls = "btn-primary") =>
@@ -93,7 +101,7 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
                 <div className="mask-pebble relative aspect-[16/12] overflow-hidden bg-azulejo-tint shadow-[var(--shadow-lift)]">
                   <Image src={hero.image || "/lifestyle/hero.svg"} alt={lang === "pt" ? "Sardinhas de cerâmica vidrada numa parede azul clara, com uma prateleira de garrafas" : "Glazed ceramic sardines on a pale blue wall above a shelf of oil bottles"} fill priority sizes="(min-width: 768px) 55vw, 100vw" className="object-cover" />
                 </div>
-                <RotatingSeal text={t(seal, lang)} className="absolute -right-2 -bottom-8 h-24 w-24 md:-right-6 md:h-32 md:w-32" />
+                {s.showSeal && <RotatingSeal text={t(seal, lang)} className="absolute -right-2 -bottom-8 h-24 w-24 md:-right-6 md:h-32 md:w-32" />}
                 <div className="absolute -bottom-6 left-2 flex items-end gap-1 md:-left-10">
                   <span className="hand -rotate-6">{h.heroNote}</span>
                   <HandArrow className="h-8 w-12 -translate-y-3 text-azulejo" />
@@ -292,6 +300,23 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
                     {reviews.slice(0, 3).map((r, i) => {
                       const p = allProducts.find((x) => x.slug === r.productSlug);
                       return (
+                        s.style === "cards" ? (
+                        <Reveal as="li" key={r.id} delay={i * 80} className="flex flex-col rounded-[var(--radius-card)] bg-cream p-6">
+                          <Stars rating={r.rating} />
+                          <p className="mt-4 font-semibold">{r.title}</p>
+                          <p className="mt-2 flex-1 text-ink-soft">“{r.body}”</p>
+                          <div className="mt-6 flex items-center justify-between border-t border-line pt-4 text-sm">
+                            <span className="font-medium">
+                              {r.author} · {r.country}
+                            </span>
+                            {p && (
+                              <Link href={href(lang, `/products/${p.slug}`)} className="link truncate pl-3 text-ink-soft">
+                                {t(p.name, lang)}
+                              </Link>
+                            )}
+                          </div>
+                        </Reveal>
+                        ) : (
                         <Reveal as="li" key={r.id} delay={i * 80} className={`relative flex flex-col rounded-md bg-cream p-6 pt-7 shadow-[var(--shadow-soft)] ring-1 ring-line ${["md:-rotate-1", "md:rotate-1", "md:-rotate-[0.5deg]"][i % 3]}`}>
                           <Stamp country={r.country} className="absolute top-4 right-4 h-12 w-[4.2rem]" />
                           <Stars rating={r.rating} />
@@ -308,6 +333,7 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
                             )}
                           </div>
                         </Reveal>
+                        )
                       );
                     })}
                   </ul>
@@ -355,6 +381,42 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
             </ul>
           </section>
         ) : null;
+
+      case "story":
+        return (
+          <section className="py-16 md:py-24" aria-label={tx(s.title)}>
+            <div className="container-x grid items-center gap-10 md:grid-cols-2 md:gap-16">
+              <Reveal className="relative">
+                <div className="mask-arch relative aspect-[4/5] overflow-hidden bg-cream-deep md:aspect-[5/6]">
+                  <Image src={s.image || "/lifestyle/studio-portrait.svg"} alt="" fill sizes="(min-width: 768px) 45vw, 100vw" className="object-cover" />
+                </div>
+                <TileMotif className="absolute -top-6 -right-4 h-20 w-20 rotate-12 text-azulejo/70 md:-right-8" />
+              </Reveal>
+              <Reveal delay={100}>
+                {tx(s.eyebrow) && <p className="eyebrow mb-4">{tx(s.eyebrow)}</p>}
+                <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>
+                {tx(s.body) && <p className="mt-6 max-w-lg text-lg text-ink-soft">{tx(s.body)}</p>}
+                {s.showStats && (
+                  <dl className="mt-10 grid grid-cols-3 gap-4 border-t border-line pt-8">
+                    {[
+                      [h.stat1, h.stat1b],
+                      [h.stat2, h.stat2b],
+                      [h.stat3, h.stat3b],
+                    ].map(([a, b]) => (
+                      <div key={a}>
+                        <dt className="headline text-2xl text-azulejo md:text-3xl">{a}</dt>
+                        <dd className="mt-1 text-sm text-ink-soft">{b}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+                <Link href={href(lang, "/our-story")} className="btn-outline mt-10">
+                  {h.storyCta} <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Reveal>
+            </div>
+          </section>
+        );
 
       case "newsletter":
         return (
@@ -462,6 +524,12 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
 
   return (
     <>
+      {previewing && (
+        <div className="bg-mustard px-4 py-2 text-center text-sm font-medium text-ink">
+          Previewing the <b>{design.name}</b> homepage. Only you can see this. <a href="?preview-home=off" className="underline underline-offset-2">Stop preview</a>
+        </div>
+      )}
+      {variant && designs.test && <AbExposure test={designs.test.id} variant={variant} />}
       {layout.map((s) => (
         <div key={s.id} data-section={s.type}>
           {render(s)}

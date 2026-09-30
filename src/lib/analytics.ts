@@ -12,7 +12,8 @@ export type EventName =
   | "begin_checkout"
   | "purchase"
   | "search"
-  | "newsletter_signup";
+  | "newsletter_signup"
+  | "ab_exposure";
 
 /** Anonymous per-tab session id (no cookie, no personal data) so the funnel can count visits. */
 function sessionId() {
@@ -31,7 +32,11 @@ function sessionId() {
 export function track(name: EventName, props: Record<string, unknown> = {}) {
   if (typeof window === "undefined") return;
   if (!/(?:^|; )tc_consent=all/.test(document.cookie)) return;
-  props = { ...props, sid: sessionId() };
+  let ab: string | null = null;
+  try {
+    ab = sessionStorage.getItem("tc_ab");
+  } catch {}
+  props = { ...props, sid: sessionId(), ...(ab ? { ab } : {}) };
   const url = new URL(window.location.href);
   const payload = JSON.stringify({
     name,
