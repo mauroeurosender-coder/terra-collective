@@ -1,11 +1,15 @@
 import Image from "next/image";
 import Link from "next/link";
+import clsx from "clsx";
 import { ArrowRight } from "lucide-react";
 import { store } from "@/lib/config";
 import { fmt, href, t } from "@/lib/i18n";
 import { getCollections, getPosts, getProducts, getReviews } from "@/lib/data/catalog";
 import { getActiveTheme, getSettings } from "@/lib/data/source";
 import { resolveLang, toCard } from "@/lib/page";
+import { normalizeLayout, type Background, type Button, type HomeSection } from "@/lib/home-layout";
+import { seal } from "@/lib/data/home-story";
+import type { L } from "@/lib/types";
 import { ProductCard } from "@/components/product/product-card";
 import { Carousel } from "@/components/ui/carousel";
 import { Reveal } from "@/components/ui/reveal";
@@ -13,22 +17,28 @@ import { Stars } from "@/components/ui/stars";
 import { NewsletterForm } from "@/components/layout/newsletter";
 import { HandArrow, SardineLine, Squiggle, WaveDivider } from "@/components/illustrations";
 import { PostCard } from "@/components/journal/post-card";
-import { imperfect, places, process as making, ribbon, seal } from "@/lib/data/home-story";
 import { ProcessIcon } from "@/components/home/process-icons";
 import { PlacesMap } from "@/components/home/places-map";
 import { DottedPath, Ribbon, RotatingSeal, Stamp } from "@/components/home/craft";
 
+const bgClass: Record<Background, string> = {
+  cream: "",
+  paper: "bg-paper",
+  tint: "bg-azulejo-tint",
+  blue: "bg-azulejo text-white",
+};
+
 export default async function Home({ params }: PageProps<"/[lang]">) {
   const { lang, dict } = await resolveLang(params);
   const h = dict.home;
-  const [allCollections, bestsellers, reviews, posts, settings] = await Promise.all([
+  const [allCollections, bestsellers, reviews, posts, settings, theme] = await Promise.all([
     getCollections(),
     getProducts({ sort: "bestselling" }),
     getReviews({ featured: true }),
     getPosts(),
     getSettings(),
+    getActiveTheme(),
   ]);
-  const theme = await getActiveTheme();
   const seasonal = theme.id !== "default";
   const collections = allCollections.filter((c) => c.featured !== false);
   // A seasonal theme replaces the hero copy (the image stays the one set in Content).
@@ -37,290 +47,426 @@ export default async function Home({ params }: PageProps<"/[lang]">) {
   const allProducts = bestsellers;
   const totalReviews = allProducts.reduce((n, p) => n + p.reviewCount, 0);
   const avg = totalReviews ? allProducts.reduce((n, p) => n + p.rating * p.reviewCount, 0) / totalReviews : 5;
+  const layout = normalizeLayout(settings.home_layout).filter((s) => s.enabled);
 
-  return (
-    <>
-      {/* Hero */}
-      <section className="paper-grain overflow-hidden">
-        <div className="container-x grid items-center gap-10 pt-8 pb-16 md:grid-cols-[1fr_1.1fr] md:gap-6 md:pt-14 md:pb-24">
-          <div className="animate-fade-up md:pr-6">
-            <p className="eyebrow mb-5">{t(hero.eyebrow, lang) || h.heroEyebrow}</p>
-            <h1 className="headline text-[2.9rem] sm:text-6xl lg:text-[5.2rem]">
-              {heroTitle.split(" ").slice(0, -1).join(" ")}{" "}
-              <span className="relative inline-block italic text-azulejo">
-                {heroTitle.split(" ").slice(-1)}
-                <Squiggle className="absolute -bottom-2 left-0 h-3 w-full text-mustard" />
-              </span>
-            </h1>
-            <p className="mt-6 max-w-md text-lg text-ink-soft">{t(hero.body, lang) || h.heroBody}</p>
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Link href={href(lang, seasonal ? theme.hero.ctaHref : "/shop")} className="btn-primary">
-                {t(hero.cta, lang) || h.heroCta} <ArrowRight className="h-4 w-4" />
-              </Link>
-              <Link href={href(lang, "/collections/ceramic-sardines")} className="btn-outline">
-                {collections[0]?.name[lang]}
-              </Link>
-            </div>
-          </div>
-          <div className="relative animate-fade-up [animation-delay:120ms]">
-            {seasonal && t(theme.stamp, lang) && (
-              <span className="absolute -top-4 right-4 z-10 grid h-24 w-24 rotate-12 place-items-center rounded-full bg-azulejo p-2 text-center font-serif text-[0.95rem] leading-tight font-semibold text-white shadow-[var(--shadow-lift)] ring-4 ring-cream md:-top-6 md:right-8 md:h-28 md:w-28 md:text-lg">
-                {t(theme.stamp, lang)}
-              </span>
-            )}
-            <div className="mask-pebble relative aspect-[16/12] overflow-hidden bg-azulejo-tint shadow-[var(--shadow-lift)]">
-              <Image src={hero.image || "/lifestyle/hero.svg"} alt={lang === "pt" ? "Sardinhas de cerâmica vidrada numa parede azul clara, com uma prateleira de garrafas" : "Glazed ceramic sardines on a pale blue wall above a shelf of oil bottles"} fill priority sizes="(min-width: 768px) 55vw, 100vw" className="object-cover" />
-            </div>
-            <RotatingSeal text={t(seal, lang)} className="absolute -right-2 -bottom-8 h-24 w-24 md:-right-6 md:h-32 md:w-32" />
-            <div className="absolute -bottom-6 left-2 flex items-end gap-1 md:-left-10">
-              <span className="hand -rotate-6">{h.heroNote}</span>
-              <HandArrow className="h-8 w-12 -translate-y-3 text-azulejo" />
-            </div>
-          </div>
-        </div>
-      </section>
+  const tx = (l: L | undefined, fallback = "") => (l ? t(l, lang) : "") || fallback;
+  const btn = (b: Button, cls = "btn-primary") =>
+    b.href && tx(b.label) ? (
+      <Link href={/^https?:/.test(b.href) ? b.href : href(lang, b.href)} className={cls}>
+        {tx(b.label)} <ArrowRight className="h-4 w-4" />
+      </Link>
+    ) : null;
 
-      <Ribbon items={ribbon} lang={lang} />
-
-      {/* Collections */}
-      <section className="container-x py-16 md:py-20" aria-labelledby="collections-h">
-        <Reveal>
-          <h2 id="collections-h" className="headline mb-8 text-3xl md:text-4xl">{h.collections}</h2>
-        </Reveal>
-        <ul className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
-          {collections.map((c, i) => (
-            <Reveal as="li" key={c.slug} delay={i * 70}>
-              <Link href={href(lang, `/collections/${c.slug}`)} className="group block">
-                <div className={`relative aspect-[4/5] overflow-hidden rounded-[var(--radius-card)] ${c.accent}`}>
-                  <Image src={c.image} alt="" fill sizes="(min-width: 768px) 25vw, 50vw" className="object-cover transition duration-700 ease-[var(--ease-out-soft)] group-hover:scale-[1.04]" />
+  const render = (s: HomeSection) => {
+    switch (s.type) {
+      case "hero":
+        return (
+          <section className="paper-grain overflow-hidden">
+            <div className="container-x grid items-center gap-10 pt-8 pb-16 md:grid-cols-[1fr_1.1fr] md:gap-6 md:pt-14 md:pb-24">
+              <div className="animate-fade-up md:pr-6">
+                <p className="eyebrow mb-5">{t(hero.eyebrow, lang) || h.heroEyebrow}</p>
+                <h1 className="headline text-[2.9rem] sm:text-6xl lg:text-[5.2rem]">
+                  {heroTitle.split(" ").slice(0, -1).join(" ")}{" "}
+                  <span className="relative inline-block italic text-azulejo">
+                    {heroTitle.split(" ").slice(-1)}
+                    <Squiggle className="absolute -bottom-2 left-0 h-3 w-full text-mustard" />
+                  </span>
+                </h1>
+                <p className="mt-6 max-w-md text-lg text-ink-soft">{t(hero.body, lang) || h.heroBody}</p>
+                <div className="mt-8 flex flex-wrap items-center gap-4">
+                  <Link href={href(lang, seasonal ? theme.hero.ctaHref : "/shop")} className="btn-primary">
+                    {t(hero.cta, lang) || h.heroCta} <ArrowRight className="h-4 w-4" />
+                  </Link>
+                  {collections[0] && (
+                    <Link href={href(lang, `/collections/${collections[0].slug}`)} className="btn-outline">
+                      {collections[0].name[lang]}
+                    </Link>
+                  )}
                 </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <h3 className="headline text-xl md:text-2xl">{t(c.name, lang)}</h3>
-                  <ArrowRight className="h-5 w-5 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
-                </div>
-                <p className="mt-1 hidden text-sm text-ink-soft md:block">{t(c.blurb, lang)}</p>
-              </Link>
-            </Reveal>
-          ))}
-        </ul>
-      </section>
-
-      {/* How it is made */}
-      <section className="paper-grain relative overflow-hidden bg-cream-deep py-16 md:py-24" aria-labelledby="making-h">
-        <div className="container-x">
-          <Reveal className="mx-auto max-w-2xl text-center">
-            <p className="eyebrow mb-4">{t(making.eyebrow, lang)}</p>
-            <h2 id="making-h" className="headline text-4xl md:text-5xl">{t(making.title, lang)}</h2>
-            <p className="mt-5 text-lg text-ink-soft">{t(making.intro, lang)}</p>
-          </Reveal>
-          <div className="relative mt-14">
-            <DottedPath className="absolute inset-x-0 top-10 hidden h-10 w-full text-azulejo/50 lg:block" />
-            <ol className="relative grid gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
-              {making.steps.map((st, i) => (
-                <Reveal as="li" key={st.n} delay={(i % 3) * 90} className="group">
-                  <div className="relative mx-auto w-fit">
-                    <div className={`grid h-28 w-28 place-items-center rounded-[38%_62%_55%_45%/45%_40%_60%_55%] bg-paper text-azulejo shadow-[var(--shadow-soft)] transition duration-500 group-hover:-rotate-3 ${i % 2 ? "rotate-2" : "-rotate-2"}`}>
-                      <ProcessIcon kind={st.icon} className="h-20 w-20" />
-                    </div>
-                    <span className="absolute -top-2 -left-3 grid h-9 w-9 place-items-center rounded-full bg-azulejo text-sm font-semibold text-white ring-4 ring-cream-deep">{st.n}</span>
-                  </div>
-                  <div className="mt-5 text-center">
-                    <p className="hand text-2xl text-coral-ink">{st.word}</p>
-                    <h3 className="headline mt-1 text-2xl">{t(st.title, lang)}</h3>
-                    <p className="mx-auto mt-2 max-w-xs text-ink-soft">{t(st.body, lang)}</p>
-                  </div>
-                </Reveal>
-              ))}
-            </ol>
-          </div>
-          <Reveal className="mt-16 flex flex-col items-center gap-6 text-center">
-            <p className="hand text-3xl text-azulejo md:text-4xl">{t(making.outro, lang)}</p>
-            <dl className="grid w-full max-w-2xl grid-cols-3 gap-4 border-t border-line pt-8">
-              {[
-                [h.stat1, h.stat1b],
-                [h.stat2, h.stat2b],
-                [h.stat3, h.stat3b],
-              ].map(([a, b]) => (
-                <div key={a}>
-                  <dt className="headline text-2xl text-azulejo md:text-3xl">{a}</dt>
-                  <dd className="mt-1 text-sm text-ink-soft">{b}</dd>
-                </div>
-              ))}
-            </dl>
-            <Link href={href(lang, "/our-story")} className="btn-outline">
-              {h.storyCta} <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* Bestsellers */}
-      <section className="container-x py-12 md:py-16" aria-labelledby="best-h">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <h2 id="best-h" className="headline text-3xl md:text-4xl">{h.bestsellers}</h2>
-            <p className="mt-2 text-ink-soft">{h.bestsellersSub}</p>
-          </div>
-          <Link href={href(lang, "/shop")} className="link shrink-0 text-sm font-semibold lg:hidden">
-            {h.viewAll}
-          </Link>
-        </div>
-        <Carousel label={h.bestsellers}>
-          {bestsellers.slice(0, 8).map((p, i) => (
-            <ProductCard key={p.slug} product={toCard(p)} priority={i < 2} />
-          ))}
-        </Carousel>
-      </section>
-
-      {/* Imperfect by design */}
-      <section className="container-x py-16 md:py-24" aria-labelledby="imperfect-h">
-        <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.35fr]">
-          <Reveal>
-            <p className="eyebrow mb-4">{t(imperfect.eyebrow, lang)}</p>
-            <h2 id="imperfect-h" className="headline text-4xl md:text-5xl">{t(imperfect.title, lang)}</h2>
-            <p className="mt-5 max-w-md text-lg text-ink-soft">{t(imperfect.body, lang)}</p>
-            <Link href={href(lang, "/collections/ceramic-sardines")} className="btn-primary mt-8">
-              {t(imperfect.cta, lang)} <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Reveal>
-          <ul className="grid grid-cols-3 gap-3 pb-8 md:gap-6">
-            {["blue", "coral", "mustard"].map((c, i) => (
-              <Reveal as="li" key={c} delay={i * 110} className={i === 1 ? "translate-y-8" : ""}>
-                <div className={`relative aspect-[3/4] overflow-hidden rounded-[var(--radius-card)] bg-paper shadow-[var(--shadow-soft)] ${["-rotate-2", "rotate-1", "-rotate-1"][i]}`}>
-                  <Image src={`/products/sardine-wall-decor/${c}.svg`} alt="" fill sizes="(min-width: 1024px) 18vw, 30vw" className="object-cover" />
-                </div>
-                <p className="hand mt-4 flex items-start gap-1 text-lg leading-tight text-ink md:text-2xl">
-                  <HandArrow className="h-6 w-8 shrink-0 -scale-y-100 text-coral" />
-                  {t(imperfect.notes[i], lang)}
-                </p>
-              </Reveal>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      {/* Gift guide by price */}
-      <section className="container-x py-12 md:py-16" aria-labelledby="gift-h">
-        <Reveal>
-          <h2 id="gift-h" className="headline mb-8 text-3xl md:text-4xl">{h.giftTitle}</h2>
-        </Reveal>
-        <ul className="grid gap-4 md:grid-cols-3 md:gap-6">
-          {[
-            { title: h.under25, sub: h.under25Sub, to: "/shop?max=25", bg: "bg-mustard-tint", img: "/products/tinned-fish-playing-cards/1.svg" },
-            { title: h.under50, sub: h.under50Sub, to: "/shop?max=50", bg: "bg-rose-tint", img: "/products/ceramic-oil-bottle/blue.svg" },
-            { title: h.statement, sub: h.statementSub, to: "/shop?min=80&sort=price-desc", bg: "bg-azulejo-tint", img: "/products/sardine-set-of-5/1.svg" },
-          ].map((g, i) => (
-            <Reveal as="li" key={g.to} delay={i * 80}>
-              <Link href={href(lang, g.to)} className={`group relative flex h-56 items-end overflow-hidden rounded-[var(--radius-card)] p-6 md:h-72 ${g.bg}`}>
-                <div className="absolute -top-6 -right-10 h-[125%] w-[62%] transition duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:rotate-2">
-                  <Image src={g.img} alt="" fill sizes="30vw" className="object-contain" />
-                </div>
-                <div className="relative">
-                  <h3 className="headline text-3xl">{g.title}</h3>
-                  <p className="mt-1 max-w-[12rem] text-sm text-ink-soft">{g.sub}</p>
-                </div>
-              </Link>
-            </Reveal>
-          ))}
-        </ul>
-      </section>
-
-      {/* Where it comes from */}
-      <section className="container-x py-16 md:py-24" aria-labelledby="places-h">
-        <Reveal className="mb-10 max-w-2xl">
-          <p className="eyebrow mb-4">{t(places.eyebrow, lang)}</p>
-          <h2 id="places-h" className="headline text-4xl md:text-5xl">{t(places.title, lang)}</h2>
-          <p className="mt-5 text-lg text-ink-soft">{t(places.body, lang)}</p>
-        </Reveal>
-        <PlacesMap pins={places.pins} lang={lang} />
-      </section>
-
-      {/* Reviews */}
-      <section className="paper-grain mt-12 bg-paper py-16 md:py-24" aria-labelledby="reviews-h">
-        <div className="container-x">
-          <div className="mb-10 text-center">
-            <SardineLine className="mx-auto mb-4 h-8 w-20 text-azulejo" />
-            <h2 id="reviews-h" className="headline text-3xl md:text-5xl">{h.reviewsTitle}</h2>
-            <p className="mt-3 flex items-center justify-center gap-2 text-ink-soft">
-              <Stars rating={avg} /> {fmt(h.reviewsSub, { rating: avg.toFixed(1), count: totalReviews })}
-            </p>
-          </div>
-          <ul className="grid gap-4 md:grid-cols-3 md:gap-6">
-            {reviews.slice(0, 3).map((r, i) => {
-              const p = allProducts.find((x) => x.slug === r.productSlug);
-              return (
-                <Reveal as="li" key={r.id} delay={i * 80} className={`relative flex flex-col rounded-md bg-cream p-6 pt-7 shadow-[var(--shadow-soft)] ring-1 ring-line ${["md:-rotate-1", "md:rotate-1", "md:-rotate-[0.5deg]"][i % 3]}`}>
-                  <Stamp country={r.country} className="absolute top-4 right-4 h-12 w-[4.2rem]" />
-                  <Stars rating={r.rating} />
-                  <p className="mt-4 pr-16 font-semibold">{r.title}</p>
-                  <p className="hand mt-3 flex-1 text-[1.35rem] leading-snug text-ink">“{r.body}”</p>
-                  <div className="mt-6 flex items-center justify-between border-t border-dashed border-ink/20 pt-4 text-sm">
-                    <span className="font-medium">
-                      {r.author} · {r.country}
-                    </span>
-                    {p && (
-                      <Link href={href(lang, `/products/${p.slug}`)} className="link truncate pl-3 text-ink-soft">
-                        {t(p.name, lang)}
-                      </Link>
-                    )}
-                  </div>
-                </Reveal>
-              );
-            })}
-          </ul>
-
-          {/* Instagram-style grid */}
-          <div className="mt-20">
-            <div className="mb-6 flex items-end justify-between gap-4">
-              <div>
-                <h3 className="headline text-2xl md:text-3xl">{h.instaTitle}</h3>
-                <p className="mt-1 text-sm text-ink-soft">{h.instaSub}</p>
               </div>
-              <a href={store.instagram} target="_blank" rel="noopener noreferrer" className="link shrink-0 text-sm font-semibold">
-                @terracollective
-              </a>
+              <div className="relative animate-fade-up [animation-delay:120ms]">
+                {seasonal && t(theme.stamp, lang) && (
+                  <span className="absolute -top-4 right-4 z-10 grid h-24 w-24 rotate-12 place-items-center rounded-full bg-azulejo p-2 text-center font-serif text-[0.95rem] leading-tight font-semibold text-white shadow-[var(--shadow-lift)] ring-4 ring-cream md:-top-6 md:right-8 md:h-28 md:w-28 md:text-lg">
+                    {t(theme.stamp, lang)}
+                  </span>
+                )}
+                <div className="mask-pebble relative aspect-[16/12] overflow-hidden bg-azulejo-tint shadow-[var(--shadow-lift)]">
+                  <Image src={hero.image || "/lifestyle/hero.svg"} alt={lang === "pt" ? "Sardinhas de cerâmica vidrada numa parede azul clara, com uma prateleira de garrafas" : "Glazed ceramic sardines on a pale blue wall above a shelf of oil bottles"} fill priority sizes="(min-width: 768px) 55vw, 100vw" className="object-cover" />
+                </div>
+                <RotatingSeal text={t(seal, lang)} className="absolute -right-2 -bottom-8 h-24 w-24 md:-right-6 md:h-32 md:w-32" />
+                <div className="absolute -bottom-6 left-2 flex items-end gap-1 md:-left-10">
+                  <span className="hand -rotate-6">{h.heroNote}</span>
+                  <HandArrow className="h-8 w-12 -translate-y-3 text-azulejo" />
+                </div>
+              </div>
             </div>
-            <ul className="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3">
-              {[1, 2, 3, 4, 5, 6].map((n) => (
-                <li key={n} className="group relative aspect-square overflow-hidden rounded-xl bg-cream-deep">
-                  <Image src={`/insta/${n}.svg`} alt="" fill sizes="(min-width: 768px) 16vw, 33vw" className="object-cover transition duration-500 group-hover:scale-105" />
+          </section>
+        );
+
+      case "ribbon":
+        return s.items.length ? <Ribbon items={s.items} lang={lang} /> : null;
+
+      case "collections":
+        return (
+          <section className="container-x py-16 md:py-20" aria-label={tx(s.title, h.collections)}>
+            <Reveal>
+              <h2 className="headline mb-8 text-3xl md:text-4xl">{tx(s.title, h.collections)}</h2>
+            </Reveal>
+            <ul className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
+              {collections.map((c, i) => (
+                <Reveal as="li" key={c.slug} delay={i * 70}>
+                  <Link href={href(lang, `/collections/${c.slug}`)} className="group block">
+                    <div className={`relative aspect-[4/5] overflow-hidden rounded-[var(--radius-card)] ${c.accent}`}>
+                      <Image src={c.image} alt="" fill sizes="(min-width: 768px) 25vw, 50vw" className="object-cover transition duration-700 ease-[var(--ease-out-soft)] group-hover:scale-[1.04]" />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between">
+                      <h3 className="headline text-xl md:text-2xl">{t(c.name, lang)}</h3>
+                      <ArrowRight className="h-5 w-5 -translate-x-1 opacity-0 transition group-hover:translate-x-0 group-hover:opacity-100" />
+                    </div>
+                    <p className="mt-1 hidden text-sm text-ink-soft md:block">{t(c.blurb, lang)}</p>
+                  </Link>
+                </Reveal>
+              ))}
+            </ul>
+          </section>
+        );
+
+      case "process":
+        return (
+          <section className="paper-grain relative overflow-hidden bg-cream-deep py-16 md:py-24" aria-label={tx(s.title)}>
+            <div className="container-x">
+              <Reveal className="mx-auto max-w-2xl text-center">
+                {tx(s.eyebrow) && <p className="eyebrow mb-4">{tx(s.eyebrow)}</p>}
+                <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>
+                {tx(s.intro) && <p className="mt-5 text-lg text-ink-soft">{tx(s.intro)}</p>}
+              </Reveal>
+              <div className="relative mt-14">
+                <DottedPath className="absolute inset-x-0 top-10 hidden h-10 w-full text-azulejo/50 lg:block" />
+                <ol className="relative grid gap-x-8 gap-y-14 sm:grid-cols-2 lg:grid-cols-3">
+                  {s.steps.map((st, i) => (
+                    <Reveal as="li" key={i} delay={(i % 3) * 90} className="group">
+                      <div className="relative mx-auto w-fit">
+                        <div className={`grid h-28 w-28 place-items-center rounded-[38%_62%_55%_45%/45%_40%_60%_55%] bg-paper text-azulejo shadow-[var(--shadow-soft)] transition duration-500 group-hover:-rotate-3 ${i % 2 ? "rotate-2" : "-rotate-2"}`}>
+                          <ProcessIcon kind={st.icon} className="h-20 w-20" />
+                        </div>
+                        <span className="absolute -top-2 -left-3 grid h-9 w-9 place-items-center rounded-full bg-azulejo text-sm font-semibold text-white ring-4 ring-cream-deep">{String(i + 1).padStart(2, "0")}</span>
+                      </div>
+                      <div className="mt-5 text-center">
+                        <p className="hand text-2xl text-coral-ink">{st.word}</p>
+                        <h3 className="headline mt-1 text-2xl">{tx(st.title)}</h3>
+                        <p className="mx-auto mt-2 max-w-xs text-ink-soft">{tx(st.body)}</p>
+                      </div>
+                    </Reveal>
+                  ))}
+                </ol>
+              </div>
+              <Reveal className="mt-16 flex flex-col items-center gap-6 text-center">
+                {tx(s.outro) && <p className="hand text-3xl text-azulejo md:text-4xl">{tx(s.outro)}</p>}
+                {s.showStats && (
+                  <>
+                    <dl className="grid w-full max-w-2xl grid-cols-3 gap-4 border-t border-line pt-8">
+                      {[
+                        [h.stat1, h.stat1b],
+                        [h.stat2, h.stat2b],
+                        [h.stat3, h.stat3b],
+                      ].map(([a, b]) => (
+                        <div key={a}>
+                          <dt className="headline text-2xl text-azulejo md:text-3xl">{a}</dt>
+                          <dd className="mt-1 text-sm text-ink-soft">{b}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <Link href={href(lang, "/our-story")} className="btn-outline">
+                      {h.storyCta} <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </>
+                )}
+              </Reveal>
+            </div>
+          </section>
+        );
+
+      case "bestsellers":
+        return (
+          <section className="container-x py-12 md:py-16" aria-label={tx(s.title, h.bestsellers)}>
+            <div className="mb-8 flex items-end justify-between gap-4">
+              <div>
+                <h2 className="headline text-3xl md:text-4xl">{tx(s.title, h.bestsellers)}</h2>
+                <p className="mt-2 text-ink-soft">{tx(s.sub, h.bestsellersSub)}</p>
+              </div>
+              <Link href={href(lang, "/shop")} className="link shrink-0 text-sm font-semibold lg:hidden">
+                {h.viewAll}
+              </Link>
+            </div>
+            <Carousel label={tx(s.title, h.bestsellers)}>
+              {bestsellers.slice(0, Math.max(1, s.count || 8)).map((p, i) => (
+                <ProductCard key={p.slug} product={toCard(p)} priority={i < 2} />
+              ))}
+            </Carousel>
+          </section>
+        );
+
+      case "imperfect":
+        return (
+          <section className="container-x py-16 md:py-24" aria-label={tx(s.title)}>
+            <div className="grid items-center gap-12 lg:grid-cols-[1fr_1.35fr]">
+              <Reveal>
+                {tx(s.eyebrow) && <p className="eyebrow mb-4">{tx(s.eyebrow)}</p>}
+                <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>
+                {tx(s.body) && <p className="mt-5 max-w-md text-lg text-ink-soft">{tx(s.body)}</p>}
+                <div className="mt-8">{btn(s.cta)}</div>
+              </Reveal>
+              <ul className="grid grid-cols-3 gap-3 pb-8 md:gap-6">
+                {s.images.slice(0, 3).map((src, i) => (
+                  <Reveal as="li" key={src + i} delay={i * 110} className={i === 1 ? "translate-y-8" : ""}>
+                    <div className={`relative aspect-[3/4] overflow-hidden rounded-[var(--radius-card)] bg-paper shadow-[var(--shadow-soft)] ${["-rotate-2", "rotate-1", "-rotate-1"][i]}`}>
+                      <Image src={src} alt="" fill sizes="(min-width: 1024px) 18vw, 30vw" className="object-cover" />
+                    </div>
+                    {s.notes[i] && tx(s.notes[i]) && (
+                      <p className="hand mt-4 flex items-start gap-1 text-lg leading-tight text-ink md:text-2xl">
+                        <HandArrow className="h-6 w-8 shrink-0 -scale-y-100 text-coral" />
+                        {tx(s.notes[i])}
+                      </p>
+                    )}
+                  </Reveal>
+                ))}
+              </ul>
+            </div>
+          </section>
+        );
+
+      case "gifts":
+        return (
+          <section className="container-x py-12 md:py-16" aria-label={tx(s.title, h.giftTitle)}>
+            <Reveal>
+              <h2 className="headline mb-8 text-3xl md:text-4xl">{tx(s.title, h.giftTitle)}</h2>
+            </Reveal>
+            <ul className="grid gap-4 md:grid-cols-3 md:gap-6">
+              {[
+                { title: h.under25, sub: h.under25Sub, to: "/shop?max=25", bg: "bg-mustard-tint", img: "/products/tinned-fish-playing-cards/1.svg" },
+                { title: h.under50, sub: h.under50Sub, to: "/shop?max=50", bg: "bg-rose-tint", img: "/products/ceramic-oil-bottle/blue.svg" },
+                { title: h.statement, sub: h.statementSub, to: "/shop?min=80&sort=price-desc", bg: "bg-azulejo-tint", img: "/products/sardine-set-of-5/1.svg" },
+              ].map((g, i) => (
+                <Reveal as="li" key={g.to} delay={i * 80}>
+                  <Link href={href(lang, g.to)} className={`group relative flex h-56 items-end overflow-hidden rounded-[var(--radius-card)] p-6 md:h-72 ${g.bg}`}>
+                    <div className="absolute -top-6 -right-10 h-[125%] w-[62%] transition duration-700 ease-[var(--ease-out-soft)] group-hover:-translate-y-2 group-hover:rotate-2">
+                      <Image src={g.img} alt="" fill sizes="30vw" className="object-contain" />
+                    </div>
+                    <div className="relative">
+                      <h3 className="headline text-3xl">{g.title}</h3>
+                      <p className="mt-1 max-w-[12rem] text-sm text-ink-soft">{g.sub}</p>
+                    </div>
+                  </Link>
+                </Reveal>
+              ))}
+            </ul>
+          </section>
+        );
+
+      case "places":
+        return s.pins.length ? (
+          <section className="container-x py-16 md:py-24" aria-label={tx(s.title)}>
+            <Reveal className="mb-10 max-w-2xl">
+              {tx(s.eyebrow) && <p className="eyebrow mb-4">{tx(s.eyebrow)}</p>}
+              <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>
+              {tx(s.body) && <p className="mt-5 text-lg text-ink-soft">{tx(s.body)}</p>}
+            </Reveal>
+            <PlacesMap pins={s.pins} lang={lang} />
+          </section>
+        ) : null;
+
+      case "reviews":
+        return (
+          <section className="paper-grain mt-12 bg-paper py-16 md:py-24" aria-label={tx(s.title, h.reviewsTitle)}>
+            <div className="container-x">
+              {reviews.length > 0 && (
+                <>
+                  <div className="mb-10 text-center">
+                    <SardineLine className="mx-auto mb-4 h-8 w-20 text-azulejo" />
+                    <h2 className="headline text-3xl md:text-5xl">{tx(s.title, h.reviewsTitle)}</h2>
+                    <p className="mt-3 flex items-center justify-center gap-2 text-ink-soft">
+                      <Stars rating={avg} /> {fmt(h.reviewsSub, { rating: avg.toFixed(1), count: totalReviews })}
+                    </p>
+                  </div>
+                  <ul className="grid gap-4 md:grid-cols-3 md:gap-6">
+                    {reviews.slice(0, 3).map((r, i) => {
+                      const p = allProducts.find((x) => x.slug === r.productSlug);
+                      return (
+                        <Reveal as="li" key={r.id} delay={i * 80} className={`relative flex flex-col rounded-md bg-cream p-6 pt-7 shadow-[var(--shadow-soft)] ring-1 ring-line ${["md:-rotate-1", "md:rotate-1", "md:-rotate-[0.5deg]"][i % 3]}`}>
+                          <Stamp country={r.country} className="absolute top-4 right-4 h-12 w-[4.2rem]" />
+                          <Stars rating={r.rating} />
+                          <p className="mt-4 pr-16 font-semibold">{r.title}</p>
+                          <p className="hand mt-3 flex-1 text-[1.35rem] leading-snug text-ink">“{r.body}”</p>
+                          <div className="mt-6 flex items-center justify-between border-t border-dashed border-ink/20 pt-4 text-sm">
+                            <span className="font-medium">
+                              {r.author} · {r.country}
+                            </span>
+                            {p && (
+                              <Link href={href(lang, `/products/${p.slug}`)} className="link truncate pl-3 text-ink-soft">
+                                {t(p.name, lang)}
+                              </Link>
+                            )}
+                          </div>
+                        </Reveal>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
+              {s.showInstagram && (
+                <div className={reviews.length ? "mt-20" : ""}>
+                  <div className="mb-6 flex items-end justify-between gap-4">
+                    <div>
+                      <h3 className="headline text-2xl md:text-3xl">{h.instaTitle}</h3>
+                      <p className="mt-1 text-sm text-ink-soft">{h.instaSub}</p>
+                    </div>
+                    <a href={settings.store.instagram || store.instagram} target="_blank" rel="noopener noreferrer" className="link shrink-0 text-sm font-semibold">
+                      @terracollective
+                    </a>
+                  </div>
+                  <ul className="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3">
+                    {[1, 2, 3, 4, 5, 6].map((n) => (
+                      <li key={n} className="group relative aspect-square overflow-hidden rounded-xl bg-cream-deep">
+                        <Image src={`/insta/${n}.svg`} alt="" fill sizes="(min-width: 768px) 16vw, 33vw" className="object-cover transition duration-500 group-hover:scale-105" />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </section>
+        );
+
+      case "journal":
+        return posts.length ? (
+          <section className="container-x py-16 md:py-24" aria-label={tx(s.title, h.journalTitle)}>
+            <div className="mb-8 flex items-end justify-between gap-4">
+              <h2 className="headline text-3xl md:text-4xl">{tx(s.title, h.journalTitle)}</h2>
+              <Link href={href(lang, "/journal")} className="link shrink-0 text-sm font-semibold">
+                {h.viewAll}
+              </Link>
+            </div>
+            <ul className="grid gap-8 md:grid-cols-3 md:gap-6">
+              {posts.slice(0, 3).map((p, i) => (
+                <Reveal as="li" key={p.slug} delay={i * 80}>
+                  <PostCard post={p} lang={lang} dict={dict} />
+                </Reveal>
+              ))}
+            </ul>
+          </section>
+        ) : null;
+
+      case "newsletter":
+        return (
+          <section className="container-x py-8" aria-label={dict.newsletter.cta}>
+            <div className="relative overflow-hidden rounded-[2rem] bg-azulejo px-6 py-14 text-white md:px-16 md:py-20">
+              <WaveDivider className="absolute inset-x-0 top-6 h-4 w-full text-white/15" />
+              <WaveDivider className="absolute inset-x-0 bottom-6 h-4 w-full text-white/15" />
+              <SardineLine className="absolute -right-6 bottom-10 hidden h-24 w-60 -rotate-12 text-white/25 md:block" strokeWidth={1.2} />
+              <div className="relative max-w-xl">
+                <h2 className="headline text-4xl md:text-5xl">{tx(s.title, fmt(dict.newsletter.title, { percent: store.newsletterDiscountPercent }))}</h2>
+                <p className="mt-3 mb-8 text-white/85">{tx(s.body, dict.newsletter.body)}</p>
+                <NewsletterForm tone="dark" source="home" />
+              </div>
+            </div>
+          </section>
+        );
+
+      case "text": {
+        const dark = s.background === "blue";
+        return (
+          <section className={clsx("py-16 md:py-24", bgClass[s.background])}>
+            <Reveal className={clsx("container-x max-w-3xl", s.align === "center" && "text-center")}>
+              {tx(s.eyebrow) && <p className={clsx("eyebrow mb-4", dark && "text-white/80")}>{tx(s.eyebrow)}</p>}
+              {tx(s.title) && <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>}
+              {tx(s.body) && <p className={clsx("mt-5 text-lg whitespace-pre-line", dark ? "text-white/85" : "text-ink-soft")}>{tx(s.body)}</p>}
+              {s.button.href && <div className="mt-8">{btn(s.button, dark ? "btn bg-white text-ink hover:bg-cream" : "btn-primary")}</div>}
+            </Reveal>
+          </section>
+        );
+      }
+
+      case "image-text": {
+        const dark = s.background === "blue";
+        return (
+          <section className={clsx("py-16 md:py-24", bgClass[s.background])}>
+            <div className="container-x grid items-center gap-10 md:grid-cols-2 md:gap-16">
+              <Reveal className={clsx("relative", s.imageSide === "right" && "md:order-2")}>
+                {s.image && (
+                  <div className="mask-arch relative aspect-[4/5] overflow-hidden bg-cream-deep md:aspect-[5/6]">
+                    <Image src={s.image} alt="" fill sizes="(min-width: 768px) 45vw, 100vw" className="object-cover" />
+                  </div>
+                )}
+              </Reveal>
+              <Reveal delay={100}>
+                {tx(s.eyebrow) && <p className={clsx("eyebrow mb-4", dark && "text-white/80")}>{tx(s.eyebrow)}</p>}
+                {tx(s.title) && <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>}
+                {tx(s.body) && <p className={clsx("mt-6 max-w-lg text-lg whitespace-pre-line", dark ? "text-white/85" : "text-ink-soft")}>{tx(s.body)}</p>}
+                {s.button.href && <div className="mt-8">{btn(s.button, dark ? "btn bg-white text-ink hover:bg-cream" : "btn-outline")}</div>}
+              </Reveal>
+            </div>
+          </section>
+        );
+      }
+
+      case "products": {
+        const picked = s.slugs.map((slug) => allProducts.find((p) => p.slug === slug)).filter((p): p is NonNullable<typeof p> => !!p);
+        return picked.length ? (
+          <section className="container-x py-12 md:py-16" aria-label={tx(s.title)}>
+            <div className="mb-8">
+              {tx(s.title) && <h2 className="headline text-3xl md:text-4xl">{tx(s.title)}</h2>}
+              {tx(s.sub) && <p className="mt-2 text-ink-soft">{tx(s.sub)}</p>}
+            </div>
+            <ul className="grid grid-cols-2 gap-4 md:grid-cols-4 md:gap-6">
+              {picked.slice(0, 8).map((p) => (
+                <li key={p.slug}>
+                  <ProductCard product={toCard(p)} />
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
-      </section>
+          </section>
+        ) : null;
+      }
 
-      {/* Journal */}
-      <section className="container-x py-16 md:py-24" aria-labelledby="journal-h">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <h2 id="journal-h" className="headline text-3xl md:text-4xl">{h.journalTitle}</h2>
-          <Link href={href(lang, "/journal")} className="link shrink-0 text-sm font-semibold">
-            {h.viewAll}
-          </Link>
-        </div>
-        <ul className="grid gap-8 md:grid-cols-3 md:gap-6">
-          {posts.slice(0, 3).map((p, i) => (
-            <Reveal as="li" key={p.slug} delay={i * 80}>
-              <PostCard post={p} lang={lang} dict={dict} />
+      case "quote":
+        return tx(s.text) ? (
+          <section className={clsx("py-16 md:py-24", bgClass[s.background])}>
+            <Reveal className="container-x max-w-4xl text-center">
+              <SardineLine className={clsx("mx-auto mb-6 h-8 w-20", s.background === "blue" ? "text-white/70" : "text-azulejo")} />
+              <blockquote className={clsx("hand text-4xl leading-tight md:text-6xl", s.background === "blue" ? "text-white" : "text-ink")}>“{tx(s.text)}”</blockquote>
+              {s.author && <p className={clsx("mt-6 text-sm font-semibold tracking-wider uppercase", s.background === "blue" ? "text-white/80" : "text-ink-soft")}>{s.author}</p>}
             </Reveal>
-          ))}
-        </ul>
-      </section>
+          </section>
+        ) : null;
 
-      {/* Newsletter */}
-      <section className="container-x" aria-labelledby="nl-h">
-        <div className="relative overflow-hidden rounded-[2rem] bg-azulejo px-6 py-14 text-white md:px-16 md:py-20">
-          <WaveDivider className="absolute inset-x-0 top-6 h-4 w-full text-white/15" />
-          <WaveDivider className="absolute inset-x-0 bottom-6 h-4 w-full text-white/15" />
-          <SardineLine className="absolute -right-6 bottom-10 hidden h-24 w-60 -rotate-12 text-white/25 md:block" strokeWidth={1.2} />
-          <div className="relative max-w-xl">
-            <h2 id="nl-h" className="headline text-4xl md:text-5xl">{fmt(dict.newsletter.title, { percent: store.newsletterDiscountPercent })}</h2>
-            <p className="mt-3 mb-8 text-white/85">{dict.newsletter.body}</p>
-            <NewsletterForm tone="dark" source="home" />
-          </div>
+      case "banner":
+        return (
+          <section className="container-x py-8">
+            <div className="relative grid overflow-hidden rounded-[2rem] bg-azulejo text-white md:grid-cols-[1.2fr_1fr]">
+              <WaveDivider className="absolute inset-x-0 top-6 h-4 w-full text-white/15" />
+              <div className="relative px-6 py-14 md:px-16 md:py-20">
+                <h2 className="headline text-4xl md:text-5xl">{tx(s.title)}</h2>
+                {tx(s.body) && <p className="mt-3 max-w-md text-white/85">{tx(s.body)}</p>}
+                {s.button.href && <div className="mt-8">{btn(s.button, "btn bg-white text-ink hover:bg-cream")}</div>}
+              </div>
+              {s.image && (
+                <div className="relative min-h-56">
+                  <Image src={s.image} alt="" fill sizes="(min-width: 768px) 40vw, 100vw" className="object-cover" />
+                </div>
+              )}
+            </div>
+          </section>
+        );
+    }
+  };
+
+  return (
+    <>
+      {layout.map((s) => (
+        <div key={s.id} data-section={s.type}>
+          {render(s)}
         </div>
-      </section>
+      ))}
     </>
   );
 }

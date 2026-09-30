@@ -6,6 +6,7 @@ import { store } from "./config";
 import { countries, zones, type ZoneId } from "./geo";
 import type { L } from "./types";
 import { defaultThemeSettings, type ThemeSettings } from "./themes";
+import { defaultHomeLayout, type HomeSection } from "./home-layout";
 
 export type PaymentKey = "card" | "mbway" | "multibanco" | "paypal" | "klarna" | "applepay" | "googlepay";
 
@@ -20,6 +21,7 @@ export type Settings = {
   store: { name: string; email: string; address: string; nif: string; instagram: string };
   emails: Record<"shipped" | "refund" | "confirmation", { subject: L; intro: L }>;
   theme: ThemeSettings;
+  home_layout: HomeSection[];
 };
 
 export const defaultSettings = (): Settings => ({
@@ -41,6 +43,7 @@ export const defaultSettings = (): Settings => ({
   payments: { card: true, mbway: true, multibanco: true, paypal: true, klarna: true, applepay: true, googlepay: true },
   store: { name: store.name, email: store.email, address: store.address, nif: store.nif, instagram: store.instagram },
   theme: defaultThemeSettings(),
+  home_layout: defaultHomeLayout(),
   emails: {
     confirmation: { subject: { en: "Thank you for your order {number}", pt: "Obrigado pela sua encomenda {number}" }, intro: { en: "We’ve received your order and will start packing within one business day.", pt: "Recebemos a sua encomenda e começamos a embalar no prazo de um dia útil." } },
     shipped: { subject: { en: "Your order {number} is on its way", pt: "A sua encomenda {number} já seguiu" }, intro: { en: "We’ve packed your pieces with care and handed them to the courier.", pt: "Embalámos as suas peças com todo o cuidado e entregámo-las à transportadora." } },
