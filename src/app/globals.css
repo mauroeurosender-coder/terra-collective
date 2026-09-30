@@ -229,3 +229,12 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .tc-deco { display: none; }
 }
+
+/* Homepage craft details */
+@keyframes tc-spin { to { transform: rotate(360deg); } }
+.tc-spin { animation: tc-spin 40s linear infinite; transform-origin: 50% 50%; }
+@keyframes tc-marquee { to { transform: translateX(-50%); } }
+.tc-marquee { animation: tc-marquee 45s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tc-spin, .tc-marquee { animation: none; }
+}
