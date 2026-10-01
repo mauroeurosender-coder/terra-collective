@@ -40,7 +40,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       <PageHeader
         back={{ href: "/admin/orders", label: "Orders" }}
         title={o.number}
-        subtitle={<span className="flex flex-wrap items-center gap-2"><StatusPill status={o.status} />{o.test && <TestBadge />} Placed {when(o.created_at)} · {o.locale.toUpperCase()}</span>}
+        subtitle={<span className="flex flex-wrap items-center gap-2"><StatusPill status={o.status} />{o.test && <TestBadge />}{o.source === "etsy" && <a href={o.external_url ?? "#"} target="_blank" rel="noopener noreferrer" className="rounded bg-[#f1641e] px-2 py-0.5 text-xs font-bold text-white">ETSY ↗</a>} Placed {when(o.created_at)} · {o.locale.toUpperCase()}</span>}
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">

@@ -57,6 +57,19 @@ export async function markShipped(orderId: string, carrier: string, tracking: st
   const { error } = await sb.from("orders").update({ status: "shipped", carrier, tracking_number: tracking, shipped_at: new Date().toISOString() }).eq("id", orderId);
   if (error) return { ok: false, error: error.message };
   await event("status", `Shipped with ${carrier} · ${tracking}`, { carrier, tracking });
+  if (order.source === "etsy" && order.external_id) {
+    // Etsy notifies its buyer itself, so we tell Etsy instead of emailing.
+    const { pushEtsyTracking } = await import("@/lib/server/etsy");
+    try {
+      const r = await pushEtsyTracking(order.external_id, carrier, tracking);
+      await event("note", r.sent ? "Tracking sent to Etsy; Etsy will notify the buyer." : `Tracking not sent to Etsy (${r.reason}).`);
+    } catch (e) {
+      await event("note", `Couldn’t send tracking to Etsy: ${(e as Error).message}`);
+    }
+    revalidatePath(`/admin/orders/${orderId}`);
+    revalidatePath("/admin/orders");
+    return { ok: true, message: "Marked as shipped and tracking sent to Etsy." };
+  }
   const mail = shippedEmail({ number: order.number, name: order.shipping_address?.firstName ?? "", locale: order.locale, carrier, tracking }, (await getSettings()).emails.shipped);
   const sent = await sendEmail(order.email, mail.subject, mail.html);
   await event("email", sent.sent ? `Shipping email sent to ${order.email}` : `Shipping email NOT sent (${sent.reason})`);

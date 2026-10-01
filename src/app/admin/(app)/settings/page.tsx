@@ -6,16 +6,18 @@ import { mergeSettings } from "@/lib/settings";
 import { countries } from "@/lib/geo";
 import { NotConnected, PageHeader, Card } from "@/components/admin/ui";
 import { TestDataPanel } from "@/components/admin/test-data-panel";
+import { EtsyPanel } from "@/components/admin/etsy-panel";
+import { etsyConfigured, etsyRedirectUri, getEtsy } from "@/lib/server/etsy";
 import { EmailsEditor, PaymentsEditor, ShippingEditor, StaffEditor, StoreEditor, VatEditor } from "@/components/admin/settings-editors";
 
 export const metadata = { title: "Settings" };
 
-const tabs = [["store", "Store"], ["shipping", "Shipping"], ["taxes", "Taxes"], ["payments", "Payments"], ["emails", "Emails"], ["staff", "Staff"], ["legal", "Languages & legal"], ["test-data", "Test data"]];
+const tabs = [["store", "Store"], ["shipping", "Shipping"], ["taxes", "Taxes"], ["payments", "Payments"], ["emails", "Emails"], ["staff", "Staff"], ["legal", "Languages & legal"], ["integrations", "Integrations"], ["test-data", "Test data"]];
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; etsy?: string }> }) {
   const session = await requireAdmin({ owner: true });
   if (!supabaseConfigured) return <><PageHeader title="Settings" /><NotConnected /></>;
-  const { tab = "store" } = await searchParams;
+  const { tab = "store", etsy: etsyNotice } = await searchParams;
   const sb = await supabaseServer();
   const [{ data: rows }, { data: staff }] = await Promise.all([sb.from("settings").select("key, value"), sb.from("staff").select("user_id, email, name, role").order("created_at")]);
   const s = mergeSettings(rows ?? []);
@@ -34,6 +36,26 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       {tab === "payments" && <PaymentsEditor initial={s.payments} stripe={!!process.env.STRIPE_SECRET_KEY} />}
       {tab === "emails" && <EmailsEditor initial={s.emails} resend={!!process.env.RESEND_API_KEY} />}
       {tab === "staff" && <StaffEditor staff={staff ?? []} me={session.mode === "live" ? session.userId : null} />}
+      {tab === "integrations" && (
+        await (async () => {
+          const e = await getEtsy();
+          const { count } = await sb.from("orders").select("id", { count: "exact", head: true }).eq("source", "etsy");
+          return (
+            <EtsyPanel
+              configured={etsyConfigured()}
+              connected={!!e.shop_id}
+              shopName={e.shop_name}
+              lastSync={e.last_sync_at}
+              lastResult={e.last_sync_result}
+              options={e.options!}
+              redirectUri={etsyRedirectUri()}
+              notice={etsyNotice}
+              etsyOrders={count ?? 0}
+              cron={!!process.env.CRON_SECRET}
+            />
+          );
+        })()
+      )}
       {tab === "test-data" && (
         <TestDataPanel
           counts={{

@@ -85,7 +85,7 @@ export async function createManualOrder(f: ManualOrderInput): Promise<Result> {
   });
   if (e2) return { ok: false, error: /out_of_stock/.test(e2.message) ? "Not enough stock for one of the products." : e2.message };
   const order = data as { id: string; number: string };
-  if (f.test) await sb.from("orders").update({ test: true }).eq("id", order.id);
+  await sb.from("orders").update({ source: "manual", ...(f.test ? { test: true } : {}) }).eq("id", order.id);
   await sb.from("order_events").insert({ order_id: order.id, kind: "note", body: `Created manually by ${session.name}${f.note.trim() ? `: ${f.note.trim().slice(0, 1000)}` : ""}`, author: session.mode === "live" ? session.userId : null });
   invalidateCatalog();
   revalidatePath("/admin/orders");

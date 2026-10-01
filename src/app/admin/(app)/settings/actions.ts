@@ -75,3 +75,34 @@ export async function clearAllTestData(): Promise<Result> {
     return { ok: false, error: (e as Error).message };
   }
 }
+
+/* ------------------------------------------------------------------ Etsy */
+
+export async function etsySyncNow(full = false): Promise<Result> {
+  await owner();
+  const { syncEtsyOrders } = await import("@/lib/server/etsy");
+  try {
+    const r = await syncEtsyOrders({ full });
+    revalidatePath("/admin", "layout");
+    return { ok: true, message: `Etsy sync finished: ${r.result}.` };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function etsySaveOptions(options: { reduceStock: boolean; pushTracking: boolean; importSince: string }): Promise<Result> {
+  await owner();
+  const { saveEtsy } = await import("@/lib/server/etsy");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(options.importSince)) return { ok: false, error: "Pick a start date." };
+  await saveEtsy({ options });
+  revalidatePath("/admin/settings");
+  return { ok: true, message: "Etsy options saved." };
+}
+
+export async function etsyDisconnect(): Promise<Result> {
+  await owner();
+  const { disconnectEtsy } = await import("@/lib/server/etsy");
+  await disconnectEtsy();
+  revalidatePath("/admin/settings");
+  return { ok: true, message: "Etsy disconnected. Imported orders stay in your admin." };
+}
