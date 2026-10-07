@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react";
-import { etsyDisconnect, etsySaveOptions, etsySyncNow } from "@/app/admin/(app)/settings/actions";
+import { CheckCircle2, Download, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react";
+import { etsyDisconnect, etsyImportListings, etsySaveOptions, etsySyncNow } from "@/app/admin/(app)/settings/actions";
 import { useSave } from "./fields";
 import { Card } from "./ui";
 
@@ -49,6 +49,7 @@ export function EtsyPanel(p: Props) {
           </p>
           <div className="flex flex-wrap gap-2">
             <button disabled={s.pending} onClick={() => s.run(() => etsySyncNow(false), () => router.refresh())} className="btn-primary min-h-10 py-2 text-sm">{s.pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Sync now</button>
+            <button disabled={s.pending} onClick={() => confirm("Import your active Etsy listings as products? New ones arrive as drafts for you to review; existing ones only get updated prices and stock. This can take a minute.") && s.run(() => etsyImportListings(), () => router.refresh())} className="btn-outline min-h-10 py-2 text-sm"><Download className="h-4 w-4" /> Import listings from Etsy</button>
             <button disabled={s.pending} onClick={() => confirm(`Re-check every Etsy order since ${opts.importSince}? Existing orders are updated, not duplicated.`) && s.run(() => etsySyncNow(true), () => router.refresh())} className="btn-outline min-h-10 py-2 text-sm">Full re-sync</button>
             <button disabled={s.pending} onClick={() => confirm("Disconnect Etsy? Imported orders stay; new ones stop arriving.") && s.run(() => etsyDisconnect(), () => router.refresh())} className="btn min-h-10 px-4 py-2 text-sm text-coral-ink hover:bg-coral-tint"><Unplug className="h-4 w-4" /> Disconnect</button>
           </div>

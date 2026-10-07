@@ -43,3 +43,6 @@ next-env.d.ts
 
 # Original product photos (uploaded to Supabase Storage, not stored in git)
 /product-photos/
+
+# Contains CRON_SECRET
+/supabase/cron-schedule.sql

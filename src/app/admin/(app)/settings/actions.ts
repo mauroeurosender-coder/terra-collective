@@ -106,3 +106,22 @@ export async function etsyDisconnect(): Promise<Result> {
   revalidatePath("/admin/settings");
   return { ok: true, message: "Etsy disconnected. Imported orders stay in your admin." };
 }
+
+/** Imports Etsy listings as products, then links already-imported Etsy orders to them. */
+export async function etsyImportListings(): Promise<Result> {
+  await owner();
+  const { importEtsyListings, syncEtsyOrders } = await import("@/lib/server/etsy");
+  const { invalidateCatalog } = await import("@/lib/data/source");
+  try {
+    const l = await importEtsyListings();
+    const s = await syncEtsyOrders({ full: true, relink: true });
+    invalidateCatalog();
+    revalidatePath("/admin", "layout");
+    return {
+      ok: true,
+      message: `Imported ${l.listings} Etsy listings: ${l.created} new draft product${l.created === 1 ? "" : "s"}, ${l.updated} already here (prices & stock updated). Orders: ${s.result}.`,
+    };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
