@@ -161,7 +161,8 @@ type Receipt = {
   gift_message: string | null;
   payment_method: string | null;
   grandtotal: Money;
-  subtotal: Money;
+  total_price?: Money; // items before coupon
+  subtotal: Money; // items after coupon
   total_shipping_cost: Money;
   total_tax_cost: Money;
   total_vat_cost?: Money;
@@ -172,6 +173,15 @@ type Receipt = {
 };
 
 const cents = (m?: Money | null) => (m ? Math.round((m.amount / (m.divisor || 100)) * 100) : 0);
+
+/** Order money fields from an Etsy receipt. Etsy adds tax (GST, VAT, sales tax) on top and remits it itself. */
+const etsyMoney = (r: Receipt) => ({
+  subtotal: r.total_price ? cents(r.total_price) : cents(r.subtotal) + cents(r.discount_amt),
+  shipping: cents(r.total_shipping_cost),
+  discount_amount: cents(r.discount_amt),
+  vat: cents(r.total_tax_cost) + cents(r.total_vat_cost),
+  total: cents(r.grandtotal),
+});
 const rank: Record<OrderStatus, number> = { pending_payment: 0, paid: 1, packing: 2, shipped: 3, delivered: 4, cancelled: 9, refunded: 9 };
 
 /** Etsy receipt → our status. */
@@ -227,7 +237,7 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
       const status = mapEtsyStatus(r);
       const refunded = Math.min(cents(r.grandtotal), (r.refunds ?? []).reduce((n, x) => n + cents(x.amount), 0));
       const ship = r.shipments?.[r.shipments.length - 1];
-      const { data: existing } = await sb.from("orders").select("id, status, external_status, tracking_number, refunded_amount").eq("source", "etsy").eq("external_id", String(r.receipt_id)).maybeSingle();
+      const { data: existing } = await sb.from("orders").select("id, status, external_status, tracking_number, refunded_amount, subtotal, shipping, discount_amount, vat, total").eq("source", "etsy").eq("external_id", String(r.receipt_id)).maybeSingle();
 
       if (existing && opts.relink) {
         const { data: cur } = await sb.from("order_items").select("variant_id").eq("order_id", existing.id);
@@ -254,7 +264,11 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
         }
         if (ship && !existing.tracking_number) Object.assign(patch, { carrier: ship.carrier_name, tracking_number: ship.tracking_code });
         if (refunded !== existing.refunded_amount) patch.refunded_amount = refunded;
-        const changed = patch.status || patch.tracking_number || patch.refunded_amount !== undefined || existing.external_status !== r.status;
+        // Keep amounts identical to Etsy (also repairs orders imported before taxes were read).
+        const money = etsyMoney(r);
+        const moneyChanged = (Object.keys(money) as (keyof typeof money)[]).some((k) => money[k] !== (existing as Record<string, unknown>)[k]);
+        if (moneyChanged) Object.assign(patch, money);
+        const changed = patch.status || patch.tracking_number || patch.refunded_amount !== undefined || moneyChanged || existing.external_status !== r.status;
         if (changed) {
           await sb.from("orders").update(patch).eq("id", existing.id);
           if (patch.status) await sb.from("order_events").insert({ order_id: existing.id, kind: "status", body: `Etsy: status changed to ${String(patch.status).replace("_", " ")} (${r.status})` });
@@ -287,14 +301,10 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
           locale: country === "PT" ? "pt" : "en",
           country,
           shipping_address: { country, firstName: firstName ?? "", lastName: rest.join(" "), address1: r.first_line ?? "", address2: r.second_line ?? "", postal: r.zip ?? "", city: r.city ?? "", state: r.state ?? "", phone: "" },
-          subtotal: cents(r.subtotal),
-          shipping: cents(r.total_shipping_cost),
+          ...etsyMoney(r),
           shipping_method: "etsy",
           gift_wrap: r.is_gift,
           gift_message: r.gift_message || null,
-          discount_amount: cents(r.discount_amt),
-          vat: cents(r.total_vat_cost ?? r.total_tax_cost),
-          total: cents(r.grandtotal),
           refunded_amount: refunded,
           payment_method: r.payment_method ? `etsy · ${r.payment_method}` : "etsy",
           payment_ref: `etsy-${r.receipt_id}`,

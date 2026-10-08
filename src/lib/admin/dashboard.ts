@@ -7,14 +7,15 @@ import { bucketKey, buckets } from "./range";
 import type { AdminOrder, Dashboard, Kpis, Range } from "./types";
 
 const COUNTS = new Set(["paid", "packing", "shipped", "delivered", "refunded"]);
-const net = (o: AdminOrder) => o.total - o.refunded;
+// Revenue = what you keep: refunds and tax remitted by Etsy are excluded.
+const net = (o: AdminOrder) => o.total - o.refunded - (o.marketplaceTax ?? 0);
 
 async function loadLive(range: Range) {
   const sb = await supabaseServer();
   const [{ data: rows }, { count: visits }, { count: prevVisits }, { data: stock }] = await Promise.all([
     sb
       .from("orders")
-      .select("id, number, created_at, status, email, country, total, refunded_amount, payment_method, gift_message, shipping_address, test, order_items(name, variant_label, unit_price, quantity, products(slug))")
+      .select("id, number, created_at, status, email, country, total, refunded_amount, payment_method, gift_message, shipping_address, test, source, vat, order_items(name, variant_label, unit_price, quantity, products(slug))")
       .gte("created_at", range.prevFrom.toISOString())
       .lt("created_at", range.to.toISOString())
       .order("created_at", { ascending: false }),
@@ -23,7 +24,7 @@ async function loadLive(range: Range) {
     sb.from("variants").select("sku, stock, options, image_index, products!inner(slug, name, options, status)").lte("stock", 3).eq("products.status", "active").order("stock"),
   ]);
 
-  type Row = { id: string; number: string; created_at: string; status: AdminOrder["status"]; email: string; country: string; total: number; refunded_amount: number; payment_method: string; gift_message: string | null; test?: boolean; shipping_address: { firstName?: string; lastName?: string }; order_items: { name: string; variant_label: string | null; unit_price: number; quantity: number; products: { slug: string } | null }[] };
+  type Row = { id: string; number: string; created_at: string; status: AdminOrder["status"]; email: string; country: string; total: number; refunded_amount: number; payment_method: string; gift_message: string | null; test?: boolean; source?: string; vat?: number; shipping_address: { firstName?: string; lastName?: string }; order_items: { name: string; variant_label: string | null; unit_price: number; quantity: number; products: { slug: string } | null }[] };
   const orders: AdminOrder[] = ((rows ?? []) as unknown as Row[]).map((o) => ({
     id: o.id,
     number: o.number,
@@ -37,6 +38,7 @@ async function loadLive(range: Range) {
     paymentMethod: o.payment_method,
     giftMessage: o.gift_message,
     test: o.test,
+    marketplaceTax: o.source === "etsy" ? (o.vat ?? 0) : 0,
     items: o.order_items.map((i) => ({ slug: i.products?.slug ?? "", name: i.name, variantLabel: i.variant_label ?? "", unitPrice: i.unit_price, quantity: i.quantity })),
   }));
 

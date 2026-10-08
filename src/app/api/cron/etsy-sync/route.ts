@@ -8,7 +8,8 @@ export async function GET(req: Request) {
   const cur = await getEtsy();
   if (!cur.shop_id) return NextResponse.json({ skipped: "not connected" });
   try {
-    return NextResponse.json(await syncEtsyOrders());
+    const full = new URL(req.url).searchParams.get("full") === "1";
+    return NextResponse.json(await syncEtsyOrders({ full }));
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

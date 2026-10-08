@@ -77,11 +77,16 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             </ul>
             <dl className="mt-3 space-y-1.5 border-t border-line pt-3 text-sm">
               <Row label="Subtotal" value={eur(o.subtotal, 2)} />
-              <Row label={`Shipping (${o.shipping_method})`} value={o.shipping ? eur(o.shipping, 2) : "Free"} />
-              {o.gift_wrap && <Row label="Gift wrap" value={eur(store.giftWrapPrice, 2)} />}
               {o.discount_amount > 0 && <Row label={`Discount ${o.discount_code ?? ""}`} value={`−${eur(o.discount_amount, 2)}`} />}
+              <Row label={o.source === "etsy" ? "Shipping" : `Shipping (${o.shipping_method})`} value={o.shipping ? eur(o.shipping, 2) : "Free"} />
+              {o.gift_wrap && o.source !== "etsy" && <Row label="Gift wrap" value={eur(store.giftWrapPrice, 2)} />}
+              {o.source === "etsy" && o.vat > 0 && <Row label={`${taxName(o.country)} (collected by Etsy)`} value={eur(o.vat, 2)} />}
               <Row label="Total" value={eur(o.total, 2)} strong />
-              <Row label={o.vat ? "VAT included" : "VAT"} value={o.vat ? eur(o.vat, 2) : "Export (0%)"} muted />
+              {o.source === "etsy" ? (
+                <Row label={o.vat ? `Etsy pays this ${taxName(o.country)} to the tax office, so it isn’t your revenue` : "No tax charged on this order"} value={o.vat ? `Your share ${eur(o.total - o.vat, 2)} (before Etsy fees)` : ""} muted />
+              ) : (
+                <Row label={o.vat ? "VAT included" : "VAT"} value={o.vat ? eur(o.vat, 2) : "Export (0%)"} muted />
+              )}
               {o.refunded_amount > 0 && <Row label="Refunded" value={`−${eur(o.refunded_amount, 2)}`} />}
             </dl>
           </Card>
@@ -147,6 +152,15 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       </div>
     </div>
   );
+}
+
+/** Local name of the consumption tax a marketplace collects for that country. */
+function taxName(country: string) {
+  if (["AU", "NZ", "SG", "IN"].includes(country)) return "GST";
+  if (country === "CA") return "GST/HST";
+  if (country === "US") return "Sales tax";
+  if (country === "JP") return "Consumption tax";
+  return "VAT";
 }
 
 function Row({ label, value, strong, muted }: { label: string; value: React.ReactNode; strong?: boolean; muted?: boolean }) {

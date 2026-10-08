@@ -15,6 +15,8 @@ export type AdminOrder = {
   paymentMethod: string;
   giftMessage?: string | null;
   test?: boolean;
+  /** Tax collected and remitted by a marketplace (e.g. Etsy GST) — not shop revenue. */
+  marketplaceTax?: number;
   items: AdminOrderItem[];
 };
 
