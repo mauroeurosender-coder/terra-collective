@@ -138,3 +138,18 @@ export async function deleteTestOrder(orderId: string): Promise<Result> {
   revalidatePath("/admin/orders");
   return { ok: true, message: "Test order deleted." };
 }
+
+/** Creates (or retries) the Moloni draft invoice for one order. */
+export async function createInvoiceDraft(orderId: string): Promise<Result> {
+  const { session } = await ctx(orderId);
+  if (session.role !== "owner") return { ok: false, error: "Only the owner can create invoices." };
+  const { retryInvoice } = await import("@/lib/server/moloni");
+  try {
+    const id = await retryInvoice(orderId);
+    revalidatePath(`/admin/orders/${orderId}`);
+    return { ok: true, message: `Rascunho criado no Moloni (id ${id}).` };
+  } catch (e) {
+    revalidatePath(`/admin/orders/${orderId}`);
+    return { ok: false, error: (e as Error).message };
+  }
+}

@@ -7,7 +7,7 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { getCountry } from "@/lib/geo";
 import { store } from "@/lib/config";
 import { Card, NotConnected, PageHeader, StatusPill, TestBadge, eur } from "@/components/admin/ui";
-import { DeleteTestOrder, NoteForm, RefundForm, WorkflowActions } from "@/components/admin/order-actions";
+import { DeleteTestOrder, InvoiceButton, NoteForm, RefundForm, WorkflowActions } from "@/components/admin/order-actions";
 
 export const metadata = { title: "Order" };
 
@@ -135,7 +135,18 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               <Row label="Reference" value={<span className="break-all">{o.payment_ref ?? "—"}</span>} />
               <Row label="NIF" value={o.nif ?? "—"} />
             </dl>
-            <p className="mt-3 flex items-center gap-2 text-xs text-ink-soft"><Receipt className="h-4 w-4" /> {o.invoice_url ? <a className="link" href={o.invoice_url} target="_blank">Invoice</a> : "Certified invoicing (InvoiceXpress/Moloni) connects in a later phase."}</p>
+            <div className="mt-4 border-t border-line pt-3 text-sm">
+              <p className="flex items-center gap-2 font-medium"><Receipt className="h-4 w-4" /> Fatura (Moloni)</p>
+              <p className="mt-1 text-ink-soft">
+                {o.invoice_status === "draft" ? <>Rascunho criado (id {o.invoice_ref}). Finalize no Moloni.</>
+                  : o.invoice_status === "issued" ? <>Emitida ({o.invoice_ref}).</>
+                  : o.invoice_status === "pending" ? <>A criar…</>
+                  : o.invoice_status === "error" ? <span className="text-coral-ink">Erro: {o.invoice_error}</span>
+                  : o.test ? <>Encomenda de teste: não é faturada.</>
+                  : <>Ainda sem fatura.</>}
+              </p>
+              {session.role === "owner" && !o.test && o.invoice_status !== "draft" && o.invoice_status !== "issued" && ["paid", "packing", "shipped", "delivered"].includes(o.status) && <div className="mt-2"><InvoiceButton orderId={o.id} retry={o.invoice_status === "error"} /></div>}
+            </div>
           </Card>
           {session.role === "owner" && o.test && (
             <Card title="Test order">

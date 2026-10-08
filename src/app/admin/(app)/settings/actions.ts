@@ -125,3 +125,46 @@ export async function etsyImportListings(): Promise<Result> {
     return { ok: false, error: (e as Error).message };
   }
 }
+
+/* ------------------------------------------------------------------ Moloni */
+
+export async function moloniRunNow(): Promise<Result> {
+  await owner();
+  const { invoicePendingOrders } = await import("@/lib/server/moloni");
+  try {
+    const r = await invoicePendingOrders(50);
+    revalidatePath("/admin", "layout");
+    return { ok: true, message: `Moloni: ${r.result}.` };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function moloniChooseSetup(company_id: number, document_set_id: number): Promise<Result> {
+  await owner();
+  const { autoSetup } = await import("@/lib/server/moloni");
+  try {
+    await autoSetup({ company_id, document_set_id });
+    revalidatePath("/admin/settings");
+    return { ok: true, message: "Empresa e série guardadas." };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function moloniSaveOptions(options: { channels: { web: boolean; etsy: boolean }; oss: boolean }): Promise<Result> {
+  await owner();
+  const { getMoloni, saveMoloni } = await import("@/lib/server/moloni");
+  const cur = await getMoloni();
+  await saveMoloni({ options: { ...cur.options!, ...options } });
+  revalidatePath("/admin/settings");
+  return { ok: true, message: "Opções guardadas." };
+}
+
+export async function moloniDisconnect(): Promise<Result> {
+  await owner();
+  const { disconnectMoloni } = await import("@/lib/server/moloni");
+  await disconnectMoloni();
+  revalidatePath("/admin/settings");
+  return { ok: true, message: "Moloni desligado. Os rascunhos já criados continuam no Moloni." };
+}

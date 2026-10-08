@@ -36,6 +36,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   if (tab.statuses) query = query.in("status", tab.statuses);
   if (sp.country) query = query.eq("country", sp.country);
   if (sp.source) query = query.eq("source", sp.source);
+  if (sp.invoice) query = query.eq("invoice_status", sp.invoice);
   if (q) {
     const safe = q.replace(/[,()%]/g, " ");
     query = query.or(`number.ilike.%${safe}%,email.ilike.%${safe}%,shipping_address->>lastName.ilike.%${safe}%,shipping_address->>firstName.ilike.%${safe}%`);

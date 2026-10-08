@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Printer, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { addNote, deleteTestOrder, markShipped, refundOrder, setStatus } from "@/app/admin/(app)/orders/actions";
+import { addNote, createInvoiceDraft, deleteTestOrder, markShipped, refundOrder, setStatus } from "@/app/admin/(app)/orders/actions";
 import type { OrderStatus } from "@/lib/admin/types";
 
 type Msg = { kind: "ok" | "error"; text: string } | null;
@@ -165,6 +165,24 @@ export function DeleteTestOrder({ orderId }: { orderId: string }) {
         className="btn min-h-10 px-4 py-2 text-sm text-coral-ink hover:bg-coral-tint"
       >
         Delete test order
+      </button>
+      <Feedback msg={msg} />
+    </div>
+  );
+}
+
+export function InvoiceButton({ orderId, retry }: { orderId: string; retry: boolean }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<Msg>(null);
+  return (
+    <div>
+      <button
+        disabled={pending}
+        onClick={() => start(async () => { const r = await createInvoiceDraft(orderId); setMsg(r.ok ? { kind: "ok", text: r.message ?? "Criado." } : { kind: "error", text: r.error }); router.refresh(); })}
+        className="btn-outline min-h-9 py-1.5 text-sm"
+      >
+        {pending ? "A criar…" : retry ? "Tentar de novo" : "Criar rascunho no Moloni"}
       </button>
       <Feedback msg={msg} />
     </div>
