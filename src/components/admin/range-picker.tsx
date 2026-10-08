@@ -16,13 +16,15 @@ const options = [
 export function RangePicker({ current, from, to }: { current: string; from: string; to: string }) {
   const sp = useSearchParams();
   const [custom, setCustom] = useState(current === "custom");
+  const keep = Object.fromEntries(["view", "section"].map((k) => [k, sp.get(k)]).filter(([, v]) => v) as [string, string][]);
+  const withRange = (range: string) => `?${new URLSearchParams({ ...keep, range })}`;
   return (
     <div className="flex max-w-full flex-wrap items-center gap-2">
       <div role="group" aria-label="Date range" className="inline-flex max-w-full overflow-x-auto rounded-full border border-line bg-paper p-1 scrollbar-none">
         {options.map((o) => (
           <Link
             key={o.key}
-            href={`?range=${o.key}`}
+            href={withRange(o.key)}
             aria-current={current === o.key ? "true" : undefined}
             onClick={() => setCustom(false)}
             className={clsx(
@@ -45,6 +47,7 @@ export function RangePicker({ current, from, to }: { current: string; from: stri
       {custom && (
         <form className="flex flex-wrap items-center gap-2" action="">
           <input type="hidden" name="range" value="custom" />
+          {Object.entries(keep).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)}
           <label className="sr-only" htmlFor="from">From</label>
           <input id="from" name="from" type="date" defaultValue={sp.get("from") ?? from} max={to} className="field w-auto rounded-full py-1.5 text-sm" required />
           <span aria-hidden className="text-ink-soft">–</span>

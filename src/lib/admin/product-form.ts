@@ -2,7 +2,7 @@ import type { L, ProductOption } from "../types";
 import type { ShippingProfile } from "../geo";
 
 export type MediaItem = { url: string; kind: "image" | "video"; alt: L };
-export type VariantRow = { id?: string; options: Record<string, string>; sku: string; price: number; compareAt: number | null; stock: number; imageIndex: number | null };
+export type VariantRow = { id?: string; options: Record<string, string>; sku: string; price: number; compareAt: number | null; stock: number; imageIndex: number | null; cost?: number | null };
 
 /** Everything the product editor edits; money in EUR cents. */
 export type ProductForm = {

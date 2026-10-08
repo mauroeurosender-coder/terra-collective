@@ -374,6 +374,7 @@ function VariantsCard({ f, setF, lang }: { f: ProductForm; setF: (fn: (p: Produc
           sku: [skuBase, ...Object.values(o).map((v) => v.slice(0, 3).toUpperCase())].join("-"),
           price: base?.price ?? 0,
           compareAt: base?.compareAt ?? null,
+          cost: base?.cost ?? null,
           stock: 0,
           imageIndex: null,
         };
@@ -466,13 +467,14 @@ function VariantsCard({ f, setF, lang }: { f: ProductForm; setF: (fn: (p: Produc
         )}
 
         <div className="-mx-2 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="text-left text-xs text-ink-soft">
               <tr>
                 <th className="px-2 pb-2 font-medium">Variant</th>
                 <th className="px-2 pb-2 font-medium">SKU</th>
                 <th className="px-2 pb-2 font-medium">Price €</th>
                 <th className="px-2 pb-2 font-medium">Was €</th>
+                <th className="px-2 pb-2 font-medium" title="What one unit costs you, for profit reports">Cost €</th>
                 <th className="px-2 pb-2 font-medium">Stock</th>
                 <th className="px-2 pb-2 font-medium">Photo</th>
               </tr>
@@ -484,6 +486,7 @@ function VariantsCard({ f, setF, lang }: { f: ProductForm; setF: (fn: (p: Produc
                   <td className="px-2 py-2"><input aria-label={`SKU for ${label(v)}`} value={v.sku} onChange={(e) => setVariant(i, { sku: e.target.value.toUpperCase() })} className="field py-1.5 text-sm" /></td>
                   <td className="px-2 py-2"><MoneyInput label={`Price for ${label(v)}`} cents={v.price} onChange={(c) => setVariant(i, { price: c ?? 0 })} /></td>
                   <td className="px-2 py-2"><MoneyInput label={`Compare-at price for ${label(v)}`} cents={v.compareAt} onChange={(c) => setVariant(i, { compareAt: c })} /></td>
+                  <td className="px-2 py-2"><MoneyInput label={`Cost of ${label(v)}`} cents={v.cost ?? null} onChange={(c) => setVariant(i, { cost: c })} /></td>
                   <td className="px-2 py-2">
                     <input aria-label={`Stock for ${label(v)}`} type="number" min={0} value={v.stock} onChange={(e) => setVariant(i, { stock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} className={clsx("field w-20 py-1.5 text-sm tabular-nums", v.stock === 0 && "border-coral/60")} />
                   </td>

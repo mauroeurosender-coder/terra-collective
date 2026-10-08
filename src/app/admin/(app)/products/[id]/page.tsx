@@ -40,7 +40,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
       options: p.options ?? [],
       variants: [...(p.variants ?? [])]
         .sort((a: any, b: any) => a.position - b.position)
-        .map((v: any) => ({ id: v.id, options: v.options ?? {}, sku: v.sku, price: v.price, compareAt: v.compare_at, stock: v.stock, imageIndex: v.image_index })),
+        .map((v: any) => ({ id: v.id, options: v.options ?? {}, sku: v.sku, price: v.price, compareAt: v.compare_at, stock: v.stock, imageIndex: v.image_index, cost: v.cost ?? null })),
       colors: p.colors ?? [],
       tags: p.tags ?? [],
       shipping: p.shipping,

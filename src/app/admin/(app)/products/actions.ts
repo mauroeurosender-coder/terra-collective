@@ -73,6 +73,7 @@ export async function saveProduct(f: ProductForm): Promise<Result> {
     options: v.options,
     price: v.price,
     compare_at: v.compareAt,
+    cost: v.cost ?? null,
     stock: v.stock,
     image_index: v.imageIndex,
     position: i,

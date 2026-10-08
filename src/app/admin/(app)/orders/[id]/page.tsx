@@ -7,6 +7,9 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { getCountry } from "@/lib/geo";
 import { store } from "@/lib/config";
 import { Card, NotConnected, PageHeader, StatusPill, TestBadge, eur } from "@/components/admin/ui";
+import { OrderCosts } from "@/components/admin/profit-editors";
+import { orderProfit } from "@/lib/admin/profit";
+import { mergeSettings } from "@/lib/settings";
 import { DeleteTestOrder, InvoiceButton, NoteForm, RefundForm, WorkflowActions } from "@/components/admin/order-actions";
 
 export const metadata = { title: "Order" };
@@ -20,10 +23,16 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const sb = await supabaseServer();
   const [{ data: o }, { data: events }] = await Promise.all([
-    sb.from("orders").select("*, customers(id, tags), order_items(*, products(slug, product_media(url, position)), variants(image_index))").eq("id", id).maybeSingle(),
+    sb.from("orders").select("*, customers(id, tags), order_items(*, products(slug, product_media(url, position)), variants(image_index, cost))").eq("id", id).maybeSingle(),
     sb.from("order_events").select("*").eq("order_id", id).order("created_at", { ascending: false }),
   ]);
   if (!o) notFound();
+  const { data: settingRows } = await sb.from("settings").select("key, value");
+  const profitDefaults = mergeSettings(settingRows ?? []).profit;
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const pr = orderProfit(o as any, profitDefaults);
+  const est = orderProfit({ ...(o as any), shipping_cost: null, packaging_cost: null, fees_cost: null }, profitDefaults);
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const a = o.shipping_address ?? {};
   const name = [a.firstName, a.lastName].filter(Boolean).join(" ");
@@ -150,6 +159,16 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               {session.role === "owner" && !o.test && o.invoice_status !== "draft" && o.invoice_status !== "issued" && ["paid", "packing", "shipped", "delivered"].includes(o.status) && <div className="mt-2"><InvoiceButton orderId={o.id} retry={o.invoice_status === "error"} /></div>}
             </div>
           </Card>
+          {session.role === "owner" && ["paid", "packing", "shipped", "delivered", "refunded"].includes(o.status) && (
+            <Card title="Costs & profit">
+              <OrderCosts
+                orderId={o.id}
+                real={{ shipping: o.shipping_cost, packaging: o.packaging_cost, fees: o.fees_cost }}
+                estimate={{ shipping: est.shipping, packaging: est.packaging, fees: est.fees }}
+                profit={{ revenue: pr.revenue, cogs: pr.cogs, profit: pr.profit, missingCost: pr.missingCost }}
+              />
+            </Card>
+          )}
           {session.role === "owner" && o.test && (
             <Card title="Test order">
               <p className="mb-3 text-sm text-ink-soft">Created to try out the admin. Delete it when you’re done.</p>

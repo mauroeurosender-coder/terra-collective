@@ -8,6 +8,23 @@ import type { L } from "./types";
 import { defaultThemeSettings, type ThemeSettings } from "./themes";
 import { defaultHomeLayout, type HomeDesigns, type HomeSection } from "./home-layout";
 
+/** Default costs used when an order has no real value entered. Money in cents, rates in %. */
+export type ProfitSettings = {
+  packaging: number;
+  shipping: { PT: number; EU: number; ROW: number };
+  etsy: { transactionPct: number; processingPct: number; processingFixed: number; listingFee: number };
+  stripe: { pct: number; fixed: number };
+};
+
+export const defaultProfitSettings = (): ProfitSettings => ({
+  packaging: 150,
+  shipping: { PT: 450, EU: 1000, ROW: 1500 },
+  // Etsy (Portugal): 6.5% transaction fee on items + shipping, payment processing ~4% + €0.30, €0.18 listing renewal per item sold.
+  etsy: { transactionPct: 6.5, processingPct: 4, processingFixed: 30, listingFee: 18 },
+  // Stripe EEA cards (adjust to your Stripe pricing).
+  stripe: { pct: 1.5, fixed: 25 },
+});
+
 export type PaymentKey = "card" | "mbway" | "multibanco" | "paypal" | "klarna" | "applepay" | "googlepay";
 
 export type ZoneSettings = { days: [number, number]; carrier: string; rates: { small: number; standard: number; statement: number; textile: number }; freeOver: number | null };
@@ -21,6 +38,7 @@ export type Settings = {
   store: { name: string; email: string; address: string; nif: string; instagram: string };
   emails: Record<"shipped" | "refund" | "confirmation", { subject: L; intro: L }>;
   theme: ThemeSettings;
+  profit: ProfitSettings;
   home_layout: HomeSection[];
   /** Saved homepage designs + A/B test. Missing until first saved; see normalizeDesigns. */
   home_designs?: HomeDesigns;
@@ -45,6 +63,7 @@ export const defaultSettings = (): Settings => ({
   payments: { card: true, mbway: true, multibanco: true, paypal: true, klarna: true, applepay: true, googlepay: true },
   store: { name: store.name, email: store.email, address: store.address, nif: store.nif, instagram: store.instagram },
   theme: defaultThemeSettings(),
+  profit: defaultProfitSettings(),
   home_layout: defaultHomeLayout(),
   home_designs: undefined,
   emails: {

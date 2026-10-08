@@ -6,6 +6,7 @@ import { isoDate, parseRange } from "@/lib/admin/range";
 import { getAnalytics, type ProductStat } from "@/lib/admin/analytics";
 import { RangePicker } from "@/components/admin/range-picker";
 import { BarList, Card, NotConnected, PageHeader, eur } from "@/components/admin/ui";
+import { ProfitView } from "@/components/admin/profit-view";
 import { countries as countryList } from "@/lib/geo";
 
 const countryName = (code: string) => (code === "??" ? "Unknown" : countryList.find((c) => c.code === code)?.name.en ?? code);
@@ -22,10 +23,27 @@ const cols: { key: keyof ProductStat; label: string }[] = [
 ];
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin();
+  const session = await requireAdmin();
   if (!supabaseConfigured) return <><PageHeader title="Analytics" /><NotConnected /></>;
   const sp = await searchParams;
   const range = parseRange(sp);
+  const view = sp.view === "profit" ? "profit" : "overview";
+  const tabs = (
+    <nav aria-label="Analytics views" className="inline-flex rounded-full border border-line bg-paper p-1">
+      {[["overview", "Visitors & sales"], ["profit", "Revenue & profit"]].map(([k, label]) => (
+        <Link key={k} href={`?view=${k}&range=${range.key}`} aria-current={view === k ? "page" : undefined} className={clsx("rounded-full px-4 py-1.5 text-sm font-medium", view === k ? "bg-ink text-cream" : "text-ink-soft hover:text-ink")}>{label}</Link>
+      ))}
+    </nav>
+  );
+  if (view === "profit") {
+    const period = range.key === "today" ? "yesterday" : "prior period";
+    return (
+      <div className="mx-auto max-w-[1280px] space-y-4">
+        <PageHeader title="Analytics" subtitle={tabs} actions={<RangePicker current={range.key} from={isoDate(range.from)} to={isoDate(new Date(range.to.getTime() - 86_400_000))} />} />
+        <ProfitView range={range} period={period} isOwner={session.role === "owner"} section={["costs", "expenses", "defaults"].includes(sp.section ?? "") ? sp.section! : "report"} />
+      </div>
+    );
+  }
   const a = await getAnalytics(range);
   const sort = (cols.find((c) => c.key === sp.sort)?.key ?? "revenue") as keyof ProductStat;
   const products = [...a.products].sort((x, y) => (y[sort] as number) - (x[sort] as number));
@@ -36,7 +54,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
     <div className="mx-auto max-w-[1280px] space-y-4">
       <PageHeader
         title="Analytics"
-        subtitle="Privacy-friendly: only visitors who accept analytics cookies are counted, and nothing identifies them."
+        subtitle={<div className="space-y-2">{tabs}<p>Privacy-friendly: only visitors who accept analytics cookies are counted, and nothing identifies them.</p></div>}
         actions={<RangePicker current={range.key} from={isoDate(range.from)} to={isoDate(new Date(range.to.getTime() - 86_400_000))} />}
       />
       {a.totalEvents === 0 && (
