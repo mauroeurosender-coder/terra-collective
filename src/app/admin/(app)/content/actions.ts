@@ -9,7 +9,7 @@ import type { L } from "@/lib/types";
 type Result = { ok: true; message?: string } | { ok: false; error: string };
 
 const contentKeys = new Set(["announcement", "hero", "featured_collections", "theme", "home_layout", "home_designs"]);
-const ownerKeys = new Set(["shipping", "vat", "payments", "store", "emails", "profit"]);
+const ownerKeys = new Set(["shipping", "vat", "payments", "store", "emails", "profit", "tax_done"]);
 
 /** Saves one settings row. Content keys: any staff. Store configuration: owner only. */
 export async function saveSetting(key: string, value: unknown): Promise<Result> {

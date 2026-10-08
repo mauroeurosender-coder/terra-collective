@@ -5,7 +5,7 @@ import type { Range } from "./types";
 
 const EU = new Set(["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"]);
 
-type OrderRow = {
+export type OrderRow = {
   id: string;
   number: string;
   created_at: string;
@@ -94,9 +94,9 @@ export type ProfitReport = {
 };
 
 const SELECT =
-  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, order_items(quantity, unit_price, variant_id, name, variants(cost), products(slug, name))";
+  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, invoice_ref, order_items(quantity, unit_price, variant_id, name, variants(cost), products(slug, name))";
 
-async function loadOrders(sb: SupabaseClient, from: Date, to: Date) {
+export async function loadProfitOrders(sb: SupabaseClient, from: Date, to: Date) {
   const rows: OrderRow[] = [];
   for (let off = 0; ; off += 1000) {
     const { data } = await sb
@@ -117,8 +117,8 @@ async function loadOrders(sb: SupabaseClient, from: Date, to: Date) {
 export async function getProfitReport(sb: SupabaseClient, range: Range): Promise<ProfitReport> {
   const [{ data: sets }, orders, prevOrders, { data: exps }, { data: prevExps }, { count: variantsWithoutCost }] = await Promise.all([
     sb.from("settings").select("key, value"),
-    loadOrders(sb, range.from, range.to),
-    loadOrders(sb, range.prevFrom, range.prevTo),
+    loadProfitOrders(sb, range.from, range.to),
+    loadProfitOrders(sb, range.prevFrom, range.prevTo),
     sb.from("expenses").select("category, amount").gte("date", range.from.toISOString().slice(0, 10)).lt("date", range.to.toISOString().slice(0, 10)),
     sb.from("expenses").select("amount").gte("date", range.prevFrom.toISOString().slice(0, 10)).lt("date", range.prevTo.toISOString().slice(0, 10)),
     sb.from("variants").select("id, products!inner(status)", { count: "exact", head: true }).is("cost", null).neq("products.status", "archived"),
