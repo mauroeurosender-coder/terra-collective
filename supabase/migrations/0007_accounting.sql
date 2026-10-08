@@ -63,10 +63,10 @@ create policy "accounting owner delete" on storage.objects for delete to authent
 
 -- Stock change from a purchase, atomically (positive adds, negative removes, never below zero).
 create or replace function adjust_stock(p_variant text, p_qty int) returns void
-language plpgsql security definer set search_path = public as $
+language plpgsql security definer set search_path = public as $$
 begin
   if not is_owner() then raise exception 'forbidden'; end if;
   update variants set stock = greatest(0, stock + p_qty) where id = p_variant;
-end $;
+end $$;
 revoke all on function adjust_stock(text, int) from public, anon;
 grant execute on function adjust_stock(text, int) to authenticated, service_role;
