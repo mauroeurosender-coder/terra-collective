@@ -352,7 +352,7 @@ export async function invoicePendingOrders(limit = 20) {
     .in("status", ["shipped", "delivered"])
     .in("source", channels)
     .eq("test", false)
-    .is("invoice_status", null)
+    .or("invoice_status.is.null,invoice_status.eq.deleted")
     .gte("shipped_at", m.options!.startFrom)
     .order("shipped_at")
     .limit(limit);
@@ -361,7 +361,7 @@ export async function invoicePendingOrders(limit = 20) {
   let failed = 0;
   for (const o of (orders ?? []) as unknown as Order[]) {
     // Claim the order first so a parallel run can't create a second draft.
-    const { data: claimed } = await sb.from("orders").update({ invoice_status: "pending", invoice_attempted_at: new Date().toISOString() }).eq("id", o.id).is("invoice_status", null).select("id");
+    const { data: claimed } = await sb.from("orders").update({ invoice_status: "pending", invoice_attempted_at: new Date().toISOString() }).eq("id", o.id).or("invoice_status.is.null,invoice_status.eq.deleted").select("id");
     if (!claimed?.length) continue;
     try {
       const id = await createDraftInvoice(o);
@@ -382,7 +382,7 @@ export async function invoicePendingOrders(limit = 20) {
 export async function retryInvoice(orderId: string) {
   const sb = supabaseService();
   const { data: o } = await sb.from("orders").select("invoice_status").eq("id", orderId).single();
-  if (o?.invoice_status === "draft" || o?.invoice_status === "issued") throw new Error("This order already has an invoice in Moloni.");
+  if (o?.invoice_status === "draft" || o?.invoice_status === "issued") throw new Error("Esta encomenda já tem fatura no Moloni.");
   await sb.from("orders").update({ invoice_status: null, invoice_error: null }).eq("id", orderId);
   const { data: full } = await sb
     .from("orders")
@@ -411,4 +411,50 @@ export async function moloniChoices(companyId?: number) {
   } catch {
     return { companies: [], sets: [] };
   }
+}
+
+/**
+ * Follows drafts in Moloni: finalised → "issued" with the official number and PDF link;
+ * deleted in Moloni → "deleted" so the order can be invoiced again. Read-only on Moloni’s side.
+ */
+export async function syncInvoiceStatuses(limit = 60) {
+  const sb = supabaseService();
+  const m = await getMoloni();
+  if (!m.company_id) return { issued: 0, deleted: 0 };
+  const { data: orders } = await sb.from("orders").select("id, invoice_ref").eq("invoice_status", "draft").order("invoice_attempted_at").limit(limit);
+  let issued = 0;
+  let deleted = 0;
+  for (const o of orders ?? []) {
+    const document_id = Number(o.invoice_ref);
+    if (!document_id) continue;
+    let doc: { document_id?: number; status?: number; number?: number; document_set_name?: string } | unknown[] | null = null;
+    try {
+      doc = await moloni<typeof doc>("invoiceReceipts/getOne", { company_id: m.company_id, document_id });
+    } catch {
+      continue; // temporary error: try again next time
+    }
+    const found = doc && !Array.isArray(doc) && (doc as { document_id?: number }).document_id;
+    if (!found) {
+      // Moloni answered but has no such document: the draft was deleted.
+      if (Array.isArray(doc) || (doc && typeof doc === "object")) {
+        await sb.from("orders").update({ invoice_status: "deleted", invoice_ref: null }).eq("id", o.id).eq("invoice_status", "draft");
+        await sb.from("order_events").insert({ order_id: o.id, kind: "note", body: "O rascunho da fatura foi apagado no Moloni. A encomenda volta a ficar por faturar." });
+        deleted++;
+      }
+      continue;
+    }
+    const d = doc as unknown as { status?: number; number?: number; document_set_name?: string };
+    if (Number(d.status) === 1) {
+      const label = `FR ${d.document_set_name ?? ""}/${d.number ?? ""}`.replace(/\s+\//, "/");
+      let url: string | null = null;
+      try {
+        const pdf = await moloni<{ url?: string }>("documents/getPDFLink", { company_id: m.company_id, document_id });
+        url = pdf?.url ?? null;
+      } catch {}
+      await sb.from("orders").update({ invoice_status: "issued", invoice_ref: label, invoice_url: url }).eq("id", o.id);
+      await sb.from("order_events").insert({ order_id: o.id, kind: "note", body: `Fatura emitida no Moloni: ${label}.` });
+      issued++;
+    }
+  }
+  return { issued, deleted };
 }

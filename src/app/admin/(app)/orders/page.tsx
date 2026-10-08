@@ -30,13 +30,14 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   let query = sb
     .from("orders")
-    .select("id, number, created_at, status, email, country, total, refunded_amount, gift_message, shipping_address, test, source, order_items(quantity)", { count: "exact" })
+    .select("id, number, created_at, status, email, country, total, refunded_amount, gift_message, shipping_address, test, source, invoice_status, invoice_ref, order_items(quantity)", { count: "exact" })
     .order("created_at", { ascending: false })
     .range((page - 1) * PAGE, page * PAGE - 1);
   if (tab.statuses) query = query.in("status", tab.statuses);
   if (sp.country) query = query.eq("country", sp.country);
   if (sp.source) query = query.eq("source", sp.source);
-  if (sp.invoice) query = query.eq("invoice_status", sp.invoice);
+  if (sp.invoice === "none") query = query.or("invoice_status.is.null,invoice_status.eq.deleted");
+  else if (sp.invoice) query = query.eq("invoice_status", sp.invoice);
   if (q) {
     const safe = q.replace(/[,()%]/g, " ");
     query = query.or(`number.ilike.%${safe}%,email.ilike.%${safe}%,shipping_address->>lastName.ilike.%${safe}%,shipping_address->>firstName.ilike.%${safe}%`);
@@ -48,7 +49,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const countMap = Object.fromEntries(counts);
   const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE));
   const link = (patch: Record<string, string | number | undefined>) => {
-    const next = new URLSearchParams(Object.entries({ tab: tab.key, q: q || undefined, country: sp.country, source: sp.source, page: undefined, ...patch }).filter(([, v]) => v != null && v !== "") as [string, string][]);
+    const next = new URLSearchParams(Object.entries({ tab: tab.key, q: q || undefined, country: sp.country, source: sp.source, invoice: sp.invoice, page: undefined, ...patch }).filter(([, v]) => v != null && v !== "") as [string, string][]);
     return `/admin/orders?${next}`;
   };
 
@@ -92,6 +93,16 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             <option value="manual">Manual</option>
           </select>
         </label>
+        <label>
+          <span className="sr-only">Fatura</span>
+          <select name="invoice" defaultValue={sp.invoice ?? ""} className="field w-auto rounded-full py-2.5">
+            <option value="">Fatura: todas</option>
+            <option value="none">Por faturar</option>
+            <option value="draft">Rascunho</option>
+            <option value="issued">Faturada</option>
+            <option value="error">Com erro</option>
+          </select>
+        </label>
         <button className="btn-primary min-h-11 px-5 py-2">Filter</button>
       </form>
 
@@ -122,6 +133,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                         <Link href={`/admin/orders/${o.id}`} className="after:absolute after:inset-0 focus-visible:outline-none">{o.number}</Link>
                         {o.test && <TestBadge />}
                         {o.source === "etsy" && <span className="ml-1.5 rounded bg-[#f1641e] px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-white">ETSY</span>}
+                        {o.invoice_status === "issued" && <span title={o.invoice_ref ?? ""} className="ml-1.5 rounded bg-olive-tint px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-olive">FATURADA</span>}
+                        {o.invoice_status === "draft" && <span className="ml-1.5 rounded bg-mustard-tint px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-ink">RASCUNHO</span>}
+                        {o.invoice_status === "error" && <span className="ml-1.5 rounded bg-coral-tint px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-coral-ink">ERRO FATURA</span>}
                         {o.gift_message && <span title="Gift message" className="ml-1.5">🎁</span>}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-ink-soft">{new Date(o.created_at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</td>

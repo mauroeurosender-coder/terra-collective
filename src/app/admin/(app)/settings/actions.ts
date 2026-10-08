@@ -130,11 +130,12 @@ export async function etsyImportListings(): Promise<Result> {
 
 export async function moloniRunNow(): Promise<Result> {
   await owner();
-  const { invoicePendingOrders } = await import("@/lib/server/moloni");
+  const { invoicePendingOrders, syncInvoiceStatuses } = await import("@/lib/server/moloni");
   try {
+    const st = await syncInvoiceStatuses();
     const r = await invoicePendingOrders(50);
     revalidatePath("/admin", "layout");
-    return { ok: true, message: `Moloni: ${r.result}.` };
+    return { ok: true, message: `Moloni: ${r.result}${st.issued ? `, ${st.issued} faturada${st.issued === 1 ? "" : "s"}` : ""}${st.deleted ? `, ${st.deleted} rascunho${st.deleted === 1 ? "" : "s"} apagado${st.deleted === 1 ? "" : "s"}` : ""}.` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }

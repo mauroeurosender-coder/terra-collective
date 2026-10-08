@@ -139,7 +139,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               <p className="flex items-center gap-2 font-medium"><Receipt className="h-4 w-4" /> Fatura (Moloni)</p>
               <p className="mt-1 text-ink-soft">
                 {o.invoice_status === "draft" ? <>Rascunho criado (id {o.invoice_ref}). Finalize no Moloni.</>
-                  : o.invoice_status === "issued" ? <>Emitida ({o.invoice_ref}).</>
+                  : o.invoice_status === "issued" ? <span className="font-medium text-olive">Faturada: {o.invoice_ref}{o.invoice_url && <> · <a className="link" href={o.invoice_url} target="_blank" rel="noopener noreferrer">ver PDF</a></>}</span>
+                  : o.invoice_status === "deleted" ? <>O rascunho foi apagado no Moloni. Por faturar.</>
                   : o.invoice_status === "pending" ? <>A criar…</>
                   : o.invoice_status === "error" ? <span className="text-coral-ink">Erro: {o.invoice_error}</span>
                   : o.test ? <>Encomenda de teste: não é faturada.</>
