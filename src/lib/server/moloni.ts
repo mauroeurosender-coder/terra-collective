@@ -124,7 +124,8 @@ type Named = { name: string };
 export async function autoSetup(choice: { company_id?: number; document_set_id?: number } = {}) {
   const companies = await moloni<({ company_id: number } & Named)[]>("companies/getAll");
   if (!companies.length) throw new Error("This Moloni account has no company.");
-  const company = companies.find((c) => c.company_id === choice.company_id) ?? companies[0];
+  // Never default to Moloni’s sample company (“Empresa Demonstração”).
+  const company = companies.find((c) => c.company_id === choice.company_id) ?? companies.find((c) => !/demonstra|demo company/i.test(c.name)) ?? companies[0];
   const company_id = company.company_id;
 
   const [sets, taxes, units, cats, maturities, payments, languages] = await Promise.all([
@@ -136,7 +137,8 @@ export async function autoSetup(choice: { company_id?: number; document_set_id?:
     moloni<({ payment_method_id: number } & Named)[]>("paymentMethods/getAll", { company_id }),
     moloni<{ language_id: number; code: string }[]>("languages/getAll", {}),
   ]);
-  const set = sets.find((s) => s.document_set_id === choice.document_set_id) ?? sets[0];
+  // Prefer an invoice-receipt series (e.g. FR2026) when none was chosen.
+  const set = sets.find((s) => s.document_set_id === choice.document_set_id) ?? sets.find((s) => /^FR/i.test(s.name)) ?? sets[0];
   if (!set) throw new Error("Create a document series (Série) in Moloni first.");
   const tax23 = taxes.find((t) => Number(t.value) === 23 && (!t.fiscal_zone || t.fiscal_zone === "PT"));
   if (!tax23) throw new Error("No 23% VAT rate found in Moloni.");
