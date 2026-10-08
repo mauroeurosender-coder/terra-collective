@@ -175,13 +175,15 @@ type Receipt = {
 const cents = (m?: Money | null) => (m ? Math.round((m.amount / (m.divisor || 100)) * 100) : 0);
 
 /** Order money fields from an Etsy receipt. Etsy adds tax (GST, VAT, sales tax) on top and remits it itself. */
-const etsyMoney = (r: Receipt) => ({
-  subtotal: r.total_price ? cents(r.total_price) : cents(r.subtotal) + cents(r.discount_amt),
-  shipping: cents(r.total_shipping_cost),
-  discount_amount: cents(r.discount_amt),
-  vat: cents(r.total_tax_cost) + cents(r.total_vat_cost),
-  total: cents(r.grandtotal),
-});
+const etsyMoney = (r: Receipt) => {
+  const subtotal = r.total_price ? cents(r.total_price) : cents(r.subtotal) + cents(r.discount_amt);
+  const shipping = cents(r.total_shipping_cost);
+  const discount_amount = cents(r.discount_amt);
+  const total = cents(r.grandtotal);
+  // Taxes plus any other charge Etsy adds and remits (e.g. Colorado retail delivery fee) = everything above the seller’s amount.
+  const vat = Math.max(cents(r.total_tax_cost) + cents(r.total_vat_cost), total - (subtotal - discount_amount + shipping));
+  return { subtotal, shipping, discount_amount, vat, total };
+};
 const rank: Record<OrderStatus, number> = { pending_payment: 0, paid: 1, packing: 2, shipped: 3, delivered: 4, cancelled: 9, refunded: 9 };
 
 /** Etsy receipt → our status. */

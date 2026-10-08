@@ -80,7 +80,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               {o.discount_amount > 0 && <Row label={`Discount ${o.discount_code ?? ""}`} value={`−${eur(o.discount_amount, 2)}`} />}
               <Row label={o.source === "etsy" ? "Shipping" : `Shipping (${o.shipping_method})`} value={o.shipping ? eur(o.shipping, 2) : "Free"} />
               {o.gift_wrap && o.source !== "etsy" && <Row label="Gift wrap" value={eur(store.giftWrapPrice, 2)} />}
-              {o.source === "etsy" && o.vat > 0 && <Row label={`${taxName(o.country)} (collected by Etsy)`} value={eur(o.vat, 2)} />}
+              {o.source === "etsy" && o.vat > 0 && <Row label={`${taxName(o.country)}${o.country === "US" ? " & fees" : ""} (collected by Etsy)`} value={eur(o.vat, 2)} />}
               <Row label="Total" value={eur(o.total, 2)} strong />
               {o.source === "etsy" ? (
                 <Row label={o.vat ? `Etsy pays this ${taxName(o.country)} to the tax office, so it isn’t your revenue` : "No tax charged on this order"} value={o.vat ? `Your share ${eur(o.total - o.vat, 2)} (before Etsy fees)` : ""} muted />
