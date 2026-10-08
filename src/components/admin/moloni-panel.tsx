@@ -27,7 +27,7 @@ type Props = {
 };
 
 const notices: Record<string, [boolean, string]> = {
-  connected: [true, "Moloni ligado. A partir de agora, cada encomenda paga gera um rascunho de fatura-recibo."],
+  connected: [true, "Moloni ligado. A partir de agora, cada encomenda enviada gera um rascunho de fatura-recibo com o número de seguimento."],
   denied: [false, "A autorização foi cancelada no Moloni."],
   error: [false, "Não foi possível ligar ao Moloni. Confirme o Developer ID, a Client Secret e o URI de resposta, e tente de novo."],
   "missing-key": [false, "Falta adicionar MOLONI_CLIENT_ID e MOLONI_CLIENT_SECRET às variáveis de ambiente."],
@@ -57,7 +57,7 @@ export function MoloniPanel(p: Props) {
             As faturas são criadas como <b>rascunho</b>. Nada é comunicado à AT até as <b>finalizar no Moloni</b> (Documentos → Faturas-Recibo → Rascunhos).
           </p>
           <p className="text-ink-soft">
-            A faturar encomendas pagas desde {p.startFrom ? new Date(p.startFrom).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" }) : "—"}. {p.counts.draft} rascunho{p.counts.draft === 1 ? "" : "s"} criado{p.counts.draft === 1 ? "" : "s"}
+            A faturar encomendas enviadas desde {p.startFrom ? new Date(p.startFrom).toLocaleString("pt-PT", { dateStyle: "medium", timeStyle: "short" }) : "—"}. {p.counts.draft} rascunho{p.counts.draft === 1 ? "" : "s"} criado{p.counts.draft === 1 ? "" : "s"}
             {p.counts.error ? <>, <Link className="font-medium text-coral-ink underline" href="/admin/orders?tab=all&invoice=error">{p.counts.error} com erro</Link></> : null}. Última verificação: {p.lastRun ? new Date(p.lastRun).toLocaleString("pt-PT", { dateStyle: "short", timeStyle: "short" }) : "nunca"}{p.lastResult ? ` (${p.lastResult})` : ""}.
           </p>
           <div className="flex flex-wrap gap-2">
@@ -88,6 +88,7 @@ export function MoloniPanel(p: Props) {
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li><b>Portugal e UE:</b> IVA de 23% incluído nos preços.</li>
               <li><b>Fora da UE:</b> exportação isenta (artigo 14.º do CIVA, código M05), sem o imposto que a Etsy cobrou e entrega no país de destino.</li>
+              <li>A fatura é criada quando a encomenda é marcada como <b>enviada</b> (aqui ou na Etsy), com a data de envio e o número de seguimento nas observações.</li>
               <li>Os portes são uma linha própria; os cupões aparecem como desconto.</li>
               <li>Clientes sem NIF ficam como consumidor final (999999990), com nome, morada e país.</li>
               <li>Confirme estas regras com o seu contabilista antes de finalizar os primeiros rascunhos.</li>
@@ -96,7 +97,7 @@ export function MoloniPanel(p: Props) {
         </div>
       ) : (
         <div className="space-y-4 text-sm">
-          <p className="text-ink-soft">Crie automaticamente rascunhos de fatura-recibo no Moloni para cada encomenda paga do site e da Etsy. Revê e finaliza no Moloni, e as faturas seguem para a AT e para o Portal das Finanças.</p>
+          <p className="text-ink-soft">Crie automaticamente rascunhos de fatura-recibo no Moloni para cada encomenda enviada do site e da Etsy, com o número de seguimento. Revê e finaliza no Moloni, e as faturas seguem para a AT e para o Portal das Finanças.</p>
           {p.configured ? (
             <form action="/api/moloni/connect" method="get"><button className="btn-primary min-h-11">Ligar Moloni</button></form>
           ) : (

@@ -189,6 +189,9 @@ type Order = {
   total: number;
   created_at: string;
   paid_at: string | null;
+  shipped_at: string | null;
+  carrier: string | null;
+  tracking_number: string | null;
   order_items: { name: string; sku: string | null; variant_label: string | null; unit_price: number; quantity: number }[];
 };
 
@@ -313,7 +316,7 @@ export async function createDraftInvoice(o: Order) {
     products.push({ product_id: await ensureProduct("PORTES", "Portes de envio", m, taxed), name: "Portes de envio", qty: 1, price: net(shippingGross), discount: 0, order: products.length + 1, ...lineTax });
   }
 
-  const date = (o.paid_at ?? o.created_at).slice(0, 10);
+  const date = (o.shipped_at ?? o.paid_at ?? o.created_at).slice(0, 10);
   const doc = await moloni<{ document_id: number }>("invoiceReceipts/insert", {
     company_id: m.company_id,
     date,
@@ -326,6 +329,7 @@ export async function createDraftInvoice(o: Order) {
     payments: [{ payment_method_id: m.setup.payment_method_id, date, value: euro(invoiceTotal), notes: o.source === "etsy" ? "Pago via Etsy" : "Pago na loja online" }],
     notes: [
       `Encomenda ${o.number}${o.source === "etsy" ? " (Etsy)" : ""}.`,
+      o.tracking_number ? `Enviado por ${o.carrier ?? "transportadora"}, n.º de seguimento ${o.tracking_number}.` : "",
       !taxed ? "Exportação de bens — isento ao abrigo do artigo 14.º do CIVA." : "",
       marketplaceTax ? `Imposto do país de destino (${euro(marketplaceTax).toFixed(2)} €) cobrado e entregue pela Etsy; não incluído nesta fatura.` : "",
     ]
@@ -336,7 +340,7 @@ export async function createDraftInvoice(o: Order) {
   return doc.document_id;
 }
 
-/** Creates drafts for paid orders since the start date (both channels per options). Never twice per order. */
+/** Creates drafts for orders shipped since the start date (both channels per options), so the tracking number is on the invoice. Never twice per order. */
 export async function invoicePendingOrders(limit = 20) {
   const sb = supabaseService();
   const m = await getMoloni();
@@ -344,13 +348,13 @@ export async function invoicePendingOrders(limit = 20) {
   const channels = [m.options!.channels.web && "web", m.options!.channels.web && "manual", m.options!.channels.etsy && "etsy"].filter(Boolean) as string[];
   const { data: orders } = await sb
     .from("orders")
-    .select("id, number, source, status, email, locale, country, nif, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, order_items(name, sku, variant_label, unit_price, quantity)")
-    .in("status", ["paid", "packing", "shipped", "delivered"])
+    .select("id, number, source, status, email, locale, country, nif, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, shipped_at, carrier, tracking_number, order_items(name, sku, variant_label, unit_price, quantity)")
+    .in("status", ["shipped", "delivered"])
     .in("source", channels)
     .eq("test", false)
     .is("invoice_status", null)
-    .gte("created_at", m.options!.startFrom)
-    .order("created_at")
+    .gte("shipped_at", m.options!.startFrom)
+    .order("shipped_at")
     .limit(limit);
 
   let created = 0;
@@ -382,7 +386,7 @@ export async function retryInvoice(orderId: string) {
   await sb.from("orders").update({ invoice_status: null, invoice_error: null }).eq("id", orderId);
   const { data: full } = await sb
     .from("orders")
-    .select("id, number, source, status, email, locale, country, nif, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, order_items(name, sku, variant_label, unit_price, quantity)")
+    .select("id, number, source, status, email, locale, country, nif, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, shipped_at, carrier, tracking_number, order_items(name, sku, variant_label, unit_price, quantity)")
     .eq("id", orderId)
     .single();
   await sb.from("orders").update({ invoice_status: "pending", invoice_attempted_at: new Date().toISOString() }).eq("id", orderId);

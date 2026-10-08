@@ -143,7 +143,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                   : o.invoice_status === "pending" ? <>A criar…</>
                   : o.invoice_status === "error" ? <span className="text-coral-ink">Erro: {o.invoice_error}</span>
                   : o.test ? <>Encomenda de teste: não é faturada.</>
-                  : <>Ainda sem fatura.</>}
+                  : ["shipped", "delivered"].includes(o.status) ? <>Ainda sem fatura.</>
+                  : <>A fatura é criada quando a encomenda for marcada como enviada.</>}
               </p>
               {session.role === "owner" && !o.test && o.invoice_status !== "draft" && o.invoice_status !== "issued" && ["paid", "packing", "shipped", "delivered"].includes(o.status) && <div className="mt-2"><InvoiceButton orderId={o.id} retry={o.invoice_status === "error"} /></div>}
             </div>
