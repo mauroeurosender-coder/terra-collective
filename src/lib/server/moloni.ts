@@ -316,7 +316,8 @@ export async function createDraftInvoice(o: Order) {
     products.push({ product_id: await ensureProduct("PORTES", "Portes de envio", m, taxed), name: "Portes de envio", qty: 1, price: net(shippingGross), discount: 0, order: products.length + 1, ...lineTax });
   }
 
-  const date = (o.shipped_at ?? o.paid_at ?? o.created_at).slice(0, 10);
+  // Issue date = the day the draft is sent to Moloni (Lisbon time).
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
   const doc = await moloni<{ document_id: number }>("invoiceReceipts/insert", {
     company_id: m.company_id,
     date,
