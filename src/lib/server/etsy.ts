@@ -426,6 +426,9 @@ export async function importEtsyListings() {
     sb.from("variants").select("id, sku, product_id"),
   ]);
   const colBySlug = new Map((cols ?? []).map((c) => [c.slug, c.id]));
+  // Variants built from inventory items: the website inventory is the reference, Etsy must not overwrite their stock.
+  const { data: composed } = await sb.from("variant_components").select("variant_id");
+  const composedIds = new Set((composed ?? []).map((c) => c.variant_id as string));
   const byListing = new Map((existingProducts ?? []).filter((x) => x.etsy_listing_id).map((x) => [String(x.etsy_listing_id), x]));
   const slugs = new Set((existingProducts ?? []).map((x) => x.slug));
   const skuOwner = new Map((allVariants ?? []).map((v) => [v.sku?.toUpperCase(), v]));
@@ -468,7 +471,7 @@ export async function importEtsyListings() {
     if (existing) {
       for (const v of variants) {
         const owner = skuOwner.get(v.sku);
-        if (owner && owner.product_id === existing.id) await sb.from("variants").update({ price: v.price, stock: v.stock }).eq("id", owner.id);
+        if (owner && owner.product_id === existing.id) await sb.from("variants").update(composedIds.has(owner.id) ? { price: v.price } : { price: v.price, stock: v.stock }).eq("id", owner.id);
         else if (!owner) {
           const id = `etsy-${l.listing_id}-${Math.random().toString(36).slice(2, 7)}`;
           await sb.from("variants").insert({ id, product_id: existing.id, ...v });

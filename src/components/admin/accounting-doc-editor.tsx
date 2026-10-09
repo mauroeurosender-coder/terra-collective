@@ -9,6 +9,7 @@ import { EU_COUNTRIES, purchaseRegime, regimeLabel, selfAssessedVat } from "@/li
 import { Card, eur } from "./ui";
 
 type Variant = { id: string; label: string };
+type InvItem = { id: string; name: string };
 const toC = (s: string) => Math.round((parseFloat(String(s).replace(",", ".")) || 0) * 100);
 const fromC = (c: number) => (c / 100).toFixed(2);
 
@@ -22,7 +23,7 @@ function MoneyField({ label, value, onChange, disabled, className }: { label: st
   return <input aria-label={label} inputMode="decimal" disabled={disabled} value={t} onChange={(e) => setT(e.target.value)} onBlur={() => { const c = toC(t); setLast(c); onChange(c); setT(fromC(c)); }} className={clsx("field py-1.5 text-sm tabular-nums", className)} />;
 }
 
-export function AccountingDocEditor({ id, direction, initial, confirmed, stockApplied, fileUrl, isPdf, variants, vies }: { id: string; direction: "purchase" | "sale"; initial: DocInput; confirmed: boolean; stockApplied: boolean; fileUrl: string | null; isPdf: boolean; variants: Variant[]; vies: { valid: boolean | null; name: string | null; checkedAt: string | null } }) {
+export function AccountingDocEditor({ id, direction, initial, confirmed, stockApplied, fileUrl, isPdf, variants, items, vies }: { id: string; direction: "purchase" | "sale"; initial: DocInput; confirmed: boolean; stockApplied: boolean; fileUrl: string | null; isPdf: boolean; variants: Variant[]; items: InvItem[]; vies: { valid: boolean | null; name: string | null; checkedAt: string | null } }) {
   const router = useRouter();
   const [d, setD] = useState(initial);
   const [pending, start] = useTransition();
@@ -119,7 +120,7 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
           <div className="-mx-2 overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm">
               <thead className="text-left text-xs text-ink-soft">
-                <tr><th className="px-2 pb-2 font-medium">Descrição</th><th className="px-2 pb-2 font-medium">Qtd.</th><th className="px-2 pb-2 font-medium">Preço s/ IVA</th><th className="px-2 pb-2 font-medium">IVA %</th>{direction === "purchase" && d.category === "goods" && <th className="px-2 pb-2 font-medium">Produto (stock)</th>}<th /></tr>
+                <tr><th className="px-2 pb-2 font-medium">Descrição</th><th className="px-2 pb-2 font-medium">Qtd.</th><th className="px-2 pb-2 font-medium">Preço s/ IVA</th><th className="px-2 pb-2 font-medium">IVA %</th>{direction === "purchase" && d.category === "goods" && <th className="px-2 pb-2 font-medium">Entra em stock como</th>}<th /></tr>
               </thead>
               <tbody className="divide-y divide-line align-top">
                 {d.lines.map((l, i) => (
@@ -132,10 +133,21 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
                     </td>
                     {direction === "purchase" && d.category === "goods" && (
                       <td className="px-2 py-2">
-                        <select aria-label="Produto" disabled={locked} value={l.variant_id ?? ""} onChange={(e) => setLine(i, { variant_id: e.target.value || null })} className={clsx("field py-1.5 text-sm", !l.variant_id && "border-mustard")}>
+                        <select
+                          aria-label="Destino em stock"
+                          disabled={locked}
+                          value={l.item_id ? `item:${l.item_id}` : l.variant_id ? `var:${l.variant_id}` : ""}
+                          onChange={(e) => {
+                            const [t, v] = e.target.value.split(":");
+                            setLine(i, { item_id: t === "item" ? v : null, variant_id: t === "var" ? v : null });
+                          }}
+                          className={clsx("field py-1.5 text-sm", !l.variant_id && !l.item_id && "border-mustard")}
+                        >
                           <option value="">— não entra em stock —</option>
-                          {variants.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+                          {items.length > 0 && <optgroup label="Inventário (componentes)">{items.map((it) => <option key={it.id} value={`item:${it.id}`}>{it.name}</option>)}</optgroup>}
+                          <optgroup label="Produtos (stock direto)">{variants.map((v) => <option key={v.id} value={`var:${v.id}`}>{v.label}</option>)}</optgroup>
                         </select>
+                        {l.item_id && <span className="mt-1 block text-xs text-olive">Ligado pelo inventário{(items.find((x) => x.id === l.item_id)?.name ? ` · ${items.find((x) => x.id === l.item_id)!.name}` : "")}</span>}
                       </td>
                     )}
                     <td className="px-2 py-2">{!locked && <button type="button" onClick={() => set("lines", d.lines.filter((_, j) => j !== i))} aria-label="Remover linha" className="grid h-9 w-9 place-items-center rounded-full text-coral-ink hover:bg-coral-tint"><Trash2 className="h-4 w-4" /></button>}</td>
@@ -144,8 +156,8 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
               </tbody>
             </table>
           </div>
-          {!locked && <button type="button" onClick={() => set("lines", [...d.lines, { description: "", quantity: 1, unit_net: 0, vat_rate: 23, variant_id: null, apply_stock: true }])} className="btn-outline mt-3 min-h-9 py-1.5 text-sm"><Plus className="h-4 w-4" /> Linha</button>}
-          {direction === "purchase" && d.category === "goods" && <p className="mt-2 text-xs text-ink-soft">Ao confirmar, as linhas com produto escolhido somam ao stock e o custo do produto é atualizado (média ponderada). Linhas sem produto não mexem no stock.</p>}
+          {!locked && <button type="button" onClick={() => set("lines", [...d.lines, { description: "", quantity: 1, unit_net: 0, vat_rate: 23, variant_id: null, item_id: null, apply_stock: true }])} className="btn-outline mt-3 min-h-9 py-1.5 text-sm"><Plus className="h-4 w-4" /> Linha</button>}
+          {direction === "purchase" && d.category === "goods" && <p className="mt-2 text-xs text-ink-soft">Ao confirmar, cada linha soma ao stock do artigo de inventário ou produto escolhido e atualiza o custo (média ponderada). As linhas são ligadas sozinhas quando contêm uma palavra-chave de um artigo do Inventário.</p>}
         </Card>
 
         <Card title="Totais">

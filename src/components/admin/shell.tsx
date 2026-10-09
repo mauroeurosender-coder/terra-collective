@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import {
   BarChart3,
+  Boxes,
   ExternalLink,
   FileText,
   LayoutDashboard,
@@ -28,6 +29,7 @@ const nav = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, ready: true },
   { href: "/admin/orders", ready: true, label: "Orders", icon: ShoppingBag },
   { href: "/admin/products", ready: true, label: "Products", icon: Package },
+  { href: "/admin/inventory", ready: true, label: "Inventory", icon: Boxes },
   { href: "/admin/customers", ready: true, label: "Customers", icon: Users },
   { href: "/admin/journal", ready: true, label: "Journal", icon: FileText },
   { href: "/admin/analytics", ready: true, label: "Analytics", icon: BarChart3 },

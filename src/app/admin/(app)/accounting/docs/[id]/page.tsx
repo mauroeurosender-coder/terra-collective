@@ -13,9 +13,10 @@ export default async function AccountingDocPage({ params }: { params: Promise<{ 
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const sb = await supabaseServer();
-  const [{ data: doc }, { data: vs }] = await Promise.all([
+  const [{ data: doc }, { data: vs }, { data: invItems }] = await Promise.all([
     sb.from("accounting_docs").select("*, accounting_doc_lines(*)").eq("id", id).maybeSingle(),
     sb.from("variants").select("id, sku, options, products!inner(name, status)").neq("products.status", "archived"),
+    sb.from("inventory_items").select("id, name").order("name"),
   ]);
   if (!doc) notFound();
   const variants = (vs ?? [])
@@ -37,7 +38,7 @@ export default async function AccountingDocPage({ params }: { params: Promise<{ 
     notes: doc.notes ?? "",
     lines: [...(doc.accounting_doc_lines ?? [])]
       .sort((a: any, b: any) => a.position - b.position)
-      .map((l: any) => ({ description: l.description, quantity: Number(l.quantity), unit_net: l.unit_net, vat_rate: Number(l.vat_rate), variant_id: l.variant_id, apply_stock: l.apply_stock })),
+      .map((l: any) => ({ description: l.description, quantity: Number(l.quantity), unit_net: l.unit_net, vat_rate: Number(l.vat_rate), variant_id: l.variant_id, item_id: l.item_id ?? null, apply_stock: l.apply_stock })),
   };
   const title = `${doc.kind === "credit_note" ? "Nota de crédito" : "Fatura"}${doc.party_name ? ` · ${doc.party_name}` : ""}`;
   return (
@@ -52,6 +53,7 @@ export default async function AccountingDocPage({ params }: { params: Promise<{ 
         fileUrl={doc.file_path ? `/admin/accounting/file/${doc.id}` : null}
         isPdf={/\.pdf$/i.test(doc.file_name ?? doc.file_path ?? "")}
         variants={variants}
+        items={(invItems ?? []) as { id: string; name: string }[]}
         vies={{ valid: doc.vies_valid ?? null, name: doc.vies_name ?? null, checkedAt: doc.vies_checked_at ?? null }}
       />
     </div>

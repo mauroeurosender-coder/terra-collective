@@ -32,6 +32,19 @@ function suggestVariant(desc: string, variants: { id: string; sku: string; label
   return best && best.score >= 0.5 ? best.id : null;
 }
 
+/** Inventory item whose keywords appear in the invoice line (accent/case-insensitive). */
+function matchItem(desc: string, items: { id: string; keywords: string[] }[]) {
+  const d = ` ${norm(desc)} `;
+  let best: { id: string; len: number } | null = null;
+  for (const it of items) {
+    for (const k of it.keywords) {
+      const kw = norm(k).trim();
+      if (kw && d.includes(kw) && (!best || kw.length > best.len)) best = { id: it.id, len: kw.length };
+    }
+  }
+  return best?.id ?? null;
+}
+
 /** Creates a draft document for an uploaded file and, when Gemini is configured, fills it in. */
 export async function registerUpload(input: { path: string; fileName: string; mime: string; direction: "purchase" | "sale"; kind: "invoice" | "credit_note" }): Promise<Result> {
   const sb = await owner();
@@ -47,7 +60,10 @@ export async function registerUpload(input: { path: string; fileName: string; mi
     const { data: file, error: dlErr } = await sb.storage.from("accounting").download(input.path);
     if (dlErr || !file) throw new Error(dlErr?.message ?? "download failed");
     const x = await extractInvoice(file, input.mime);
-    const { data: vs } = await sb.from("variants").select("id, sku, options, products!inner(name, status)").neq("products.status", "archived");
+    const [{ data: vs }, { data: invItems }] = await Promise.all([
+      sb.from("variants").select("id, sku, options, products!inner(name, status)").neq("products.status", "archived"),
+      sb.from("inventory_items").select("id, keywords"),
+    ]);
     const variants = (vs ?? []).map((v) => ({ id: v.id as string, sku: v.sku as string, label: `${(v.products as unknown as { name: { en: string } }).name.en} ${Object.values((v.options as Record<string, string>) ?? {}).join(" ")}` }));
     await sb
       .from("accounting_docs")
@@ -74,7 +90,8 @@ export async function registerUpload(input: { path: string; fileName: string; mi
           quantity: Number(l.quantity) || 1,
           unit_net: c(l.unit_net),
           vat_rate: Number(l.vat_rate) || 0,
-          variant_id: input.direction === "purchase" ? suggestVariant(l.description || "", variants) : null,
+          item_id: input.direction === "purchase" ? matchItem(l.description || "", (invItems ?? []) as { id: string; keywords: string[] }[]) : null,
+          variant_id: input.direction === "purchase" && !matchItem(l.description || "", (invItems ?? []) as { id: string; keywords: string[] }[]) ? suggestVariant(l.description || "", variants) : null,
           apply_stock: input.direction === "purchase",
         })),
       );
@@ -119,7 +136,7 @@ export type DocInput = {
   category: string;
   deductible: boolean;
   notes: string;
-  lines: { description: string; quantity: number; unit_net: number; vat_rate: number; variant_id: string | null; apply_stock: boolean }[];
+  lines: { description: string; quantity: number; unit_net: number; vat_rate: number; variant_id: string | null; item_id?: string | null; apply_stock: boolean }[];
 };
 
 export async function saveDoc(id: string, d: DocInput): Promise<Result> {
@@ -133,7 +150,7 @@ export async function saveDoc(id: string, d: DocInput): Promise<Result> {
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
   await sb.from("accounting_doc_lines").delete().eq("doc_id", id);
-  if (d.lines.length) await sb.from("accounting_doc_lines").insert(d.lines.map((l, i) => ({ ...l, doc_id: id, position: i })));
+  if (d.lines.length) await sb.from("accounting_doc_lines").insert(d.lines.map((l, i) => ({ ...l, item_id: l.item_id ?? null, variant_id: l.item_id ? null : l.variant_id, doc_id: id, position: i })));
   revalidatePath(`/admin/accounting/docs/${id}`);
   revalidatePath("/admin/accounting");
   return { ok: true, message: "Guardado." };
@@ -149,7 +166,15 @@ export async function confirmDoc(id: string): Promise<Result> {
   const vatIsCost = doc.direction === "purchase" && (!doc.deductible || purchaseRegime(doc.party_country, doc.vat) === "foreign_vat");
   if (doc.direction === "purchase" && doc.category === "goods" && !doc.stock_applied) {
     const sign = doc.kind === "credit_note" ? -1 : 1;
-    for (const l of doc.accounting_doc_lines as { variant_id: string | null; apply_stock: boolean; quantity: number; unit_net: number; vat_rate: number }[]) {
+    for (const l of doc.accounting_doc_lines as { variant_id: string | null; item_id: string | null; apply_stock: boolean; quantity: number; unit_net: number; vat_rate: number }[]) {
+      if (l.item_id && l.apply_stock) {
+        const qty = Math.round(Number(l.quantity)) * sign;
+        const unit = vatIsCost ? Math.round(l.unit_net * (1 + Number(l.vat_rate) / 100)) : l.unit_net;
+        const { error } = await sb.rpc("receive_item", { p_item: l.item_id, p_qty: qty, p_unit_cost: unit, p_ref: doc.number ?? doc.id });
+        if (error) return { ok: false, error: error.message };
+        moved += Math.abs(qty);
+        continue;
+      }
       if (!l.variant_id || !l.apply_stock) continue;
       const qty = Math.round(Number(l.quantity)) * sign;
       if (!qty) continue;
@@ -179,8 +204,9 @@ export async function unconfirmDoc(id: string): Promise<Result> {
   if (!doc) return { ok: false, error: "Documento não encontrado." };
   if (doc.stock_applied) {
     const sign = doc.kind === "credit_note" ? 1 : -1;
-    for (const l of doc.accounting_doc_lines as { variant_id: string | null; apply_stock: boolean; quantity: number }[]) {
-      if (l.variant_id && l.apply_stock) await sb.rpc("adjust_stock", { p_variant: l.variant_id, p_qty: Math.round(Number(l.quantity)) * sign });
+    for (const l of doc.accounting_doc_lines as { variant_id: string | null; item_id: string | null; apply_stock: boolean; quantity: number }[]) {
+      if (l.item_id && l.apply_stock) await sb.rpc("receive_item", { p_item: l.item_id, p_qty: Math.round(Number(l.quantity)) * sign, p_unit_cost: null, p_ref: `anulação ${doc.number ?? ""}`.trim() });
+      else if (l.variant_id && l.apply_stock) await sb.rpc("adjust_stock", { p_variant: l.variant_id, p_qty: Math.round(Number(l.quantity)) * sign });
     }
     invalidateCatalog();
   }
