@@ -52,6 +52,7 @@ export default async function AccountingDocPage({ params }: { params: Promise<{ 
         fileUrl={doc.file_path ? `/admin/accounting/file/${doc.id}` : null}
         isPdf={/\.pdf$/i.test(doc.file_name ?? doc.file_path ?? "")}
         variants={variants}
+        vies={{ valid: doc.vies_valid ?? null, name: doc.vies_name ?? null, checkedAt: doc.vies_checked_at ?? null }}
       />
     </div>
   );

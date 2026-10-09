@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mergeSettings } from "../settings";
 import { loadProfitOrders, orderProfit } from "./profit";
+import { purchaseRegime, selfAssessedVat } from "../vat-regime";
 
 /**
  * Portuguese tax helpers for a self-employed seller (Category B, simplified regime)
@@ -28,6 +29,11 @@ export const shiftQuarter = (q: string, by: number) => {
 export type VatSummary = {
   sales: { taxedBase: number; taxedVat: number; exemptExports: number; orders: number; creditNotesBase: number; creditNotesVat: number };
   purchases: { goods: { rate: number; base: number; vat: number }[]; other: { base: number; vat: number }; nonDeductibleVat: number; docs: number; drafts: number };
+  /** Intra-EU acquisitions: base and self-assessed PT VAT (declared as charged AND deductible → neutral). */
+  intraEu: { base: number; vat: number; docs: number };
+  /** VAT charged by EU suppliers in their country — not deductible in Portugal. */
+  foreignVat: { vat: number; docs: number };
+  imports: { base: number; docs: number };
   output: number; // IVA liquidado
   input: number; // IVA dedutível
   balance: number; // > 0 to pay, < 0 credit
@@ -36,14 +42,14 @@ export type VatSummary = {
   irsTaxable: number; // 15% of sales of goods (simplified regime coefficient)
 };
 
-type Doc = { direction: "purchase" | "sale"; kind: string; status: string; category: string; deductible: boolean; net: number; vat: number; vat_lines: { rate: number; base: number; vat: number }[] };
+type Doc = { direction: "purchase" | "sale"; kind: string; status: string; category: string; deductible: boolean; net: number; vat: number; vat_lines: { rate: number; base: number; vat: number }[]; party_country: string | null };
 
 export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSummary> {
   const r = quarterRange(q);
   const [{ data: sets }, orders, { data: docs }] = await Promise.all([
     sb.from("settings").select("key, value"),
     loadProfitOrders(sb, r.from, r.to),
-    sb.from("accounting_docs").select("direction, kind, status, category, deductible, net, vat, vat_lines").gte("date", r.from.toISOString().slice(0, 10)).lt("date", r.to.toISOString().slice(0, 10)),
+    sb.from("accounting_docs").select("direction, kind, status, category, deductible, net, vat, vat_lines, party_country").gte("date", r.from.toISOString().slice(0, 10)).lt("date", r.to.toISOString().slice(0, 10)),
   ]);
   const p = mergeSettings(sets ?? []).profit;
 
@@ -62,6 +68,9 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
   let nonDeductibleVat = 0;
   let count = 0;
   let drafts = 0;
+  const intraEu = { base: 0, vat: 0, docs: 0 };
+  const foreignVat = { vat: 0, docs: 0 };
+  const imports = { base: 0, docs: 0 };
   for (const d of (docs ?? []) as Doc[]) {
     if (d.status !== "confirmed") {
       drafts++;
@@ -76,6 +85,32 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
       continue;
     }
     count++;
+    const regime = purchaseRegime(d.party_country, d.vat);
+    if (regime === "intra_eu") {
+      // Self-assess 23% PT VAT: it is both charged (output) and deducted (input).
+      const vat = selfAssessedVat(d.net);
+      intraEu.base += sign * d.net;
+      intraEu.vat += sign * vat;
+      intraEu.docs++;
+      if (d.deductible) {
+        const target = d.category === "goods" || d.category === "materials" ? (byRate.get(23) ?? { base: 0, vat: 0 }) : other;
+        target.base += sign * d.net;
+        target.vat += sign * vat;
+        if (d.category === "goods" || d.category === "materials") byRate.set(23, target);
+      }
+      continue;
+    }
+    if (regime === "foreign_vat") {
+      foreignVat.vat += sign * d.vat;
+      foreignVat.docs++;
+      nonDeductibleVat += sign * d.vat;
+      continue;
+    }
+    if (regime === "import") {
+      imports.base += sign * d.net;
+      imports.docs++;
+      continue; // import VAT is deducted from the customs/courier document, not the supplier invoice
+    }
     if (!d.deductible) {
       nonDeductibleVat += sign * d.vat;
       continue;
@@ -94,7 +129,7 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
     }
   }
   const goods = [...byRate.entries()].sort((a, b) => b[0] - a[0]).map(([rate, v]) => ({ rate, ...v }));
-  const output = sales.taxedVat - sales.creditNotesVat;
+  const output = sales.taxedVat - sales.creditNotesVat + intraEu.vat;
   const input = goods.reduce((n, g) => n + g.vat, 0) + other.vat;
   const revenueExVat = sales.taxedBase + sales.exemptExports - sales.creditNotesBase;
   // Self-employed selling goods: relevant income = 20% of sales; contribution 21.4% per month of 1/3 of the quarter.
@@ -102,6 +137,9 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
   return {
     sales,
     purchases: { goods, other, nonDeductibleVat, docs: count, drafts },
+    intraEu,
+    foreignVat,
+    imports,
     output,
     input,
     balance: output - input,

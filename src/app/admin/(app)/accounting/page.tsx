@@ -8,6 +8,7 @@ import { obligations, quarterOf, quarterRange, shiftQuarter, vatSummary } from "
 import { Card, NotConnected, PageHeader, eur } from "@/components/admin/ui";
 import { AccountingUpload } from "@/components/admin/accounting-upload";
 import { TaxCalendar } from "@/components/admin/tax-calendar";
+import { purchaseRegime, regimeLabel } from "@/lib/vat-regime";
 
 export const metadata = { title: "Contabilidade" };
 
@@ -21,7 +22,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
   const today = new Date().toISOString().slice(0, 10);
   const [vat, { data: docs }, { data: doneRow }] = await Promise.all([
     vatSummary(sb, q.key),
-    sb.from("accounting_docs").select("id, direction, kind, status, party_name, number, date, net, vat, total, category, stock_applied, file_name").gte("date", q.from.toISOString().slice(0, 10)).lt("date", q.to.toISOString().slice(0, 10)).order("date", { ascending: false }),
+    sb.from("accounting_docs").select("id, direction, kind, status, party_name, party_country, number, date, net, vat, total, category, stock_applied, file_name, vies_valid").gte("date", q.from.toISOString().slice(0, 10)).lt("date", q.to.toISOString().slice(0, 10)).order("date", { ascending: false }),
     sb.from("settings").select("value").eq("key", "tax_done").maybeSingle(),
   ]);
   const year = new Date().getFullYear();
@@ -62,6 +63,15 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             <p className="pt-3 text-xs font-semibold tracking-wider text-ink-soft uppercase">Compras ({vat.purchases.docs} documentos confirmados)</p>
             {vat.purchases.goods.map((g) => <Row key={g.rate} label={`Existências a ${g.rate}%`} value={g.base} sub={`IVA ${eur(g.vat, 2)}`} />)}
             <Row label="Outros bens e serviços" value={vat.purchases.other.base} sub={`IVA ${eur(vat.purchases.other.vat, 2)}`} />
+            {vat.intraEu.docs > 0 && (
+              <>
+                <p className="pt-3 text-xs font-semibold tracking-wider text-ink-soft uppercase">Aquisições intracomunitárias ({vat.intraEu.docs})</p>
+                <Row label="Base (compras a fornecedores da UE sem IVA)" value={vat.intraEu.base} sub={`IVA autoliquidado 23%: ${eur(vat.intraEu.vat, 2)}`} />
+                <p className="text-xs text-ink-soft">Este IVA entra como liquidado <b>e</b> como dedutível (já incluído acima nas existências a 23%), por isso o efeito é zero, mas tem de constar na declaração.</p>
+              </>
+            )}
+            {vat.foreignVat.docs > 0 && <p className="mt-2 rounded-xl bg-coral-tint px-3 py-2 text-sm text-coral-ink">{eur(vat.foreignVat.vat, 2)} de IVA estrangeiro em {vat.foreignVat.docs} fatura{vat.foreignVat.docs === 1 ? "" : "s"} da UE não é dedutível em Portugal (conta como custo). Peça faturas sem IVA com o seu NIF PT.</p>}
+            {vat.imports.docs > 0 && <p className="mt-2 rounded-xl bg-cream px-3 py-2 text-sm">{vat.imports.docs} compra{vat.imports.docs === 1 ? "" : "s"} fora da UE: o IVA de importação deduz-se pelo documento da alfândega/transportadora, que também deve carregar.</p>}
           </dl>
           {vat.purchases.drafts > 0 && <p className="mt-3 rounded-xl bg-mustard-tint px-3 py-2 text-sm">{vat.purchases.drafts} documento{vat.purchases.drafts === 1 ? "" : "s"} por confirmar não {vat.purchases.drafts === 1 ? "está" : "estão"} incluído{vat.purchases.drafts === 1 ? "" : "s"}.</p>}
           <p className="mt-3 text-xs text-ink-soft">Vendas a partir das encomendas (site, Etsy e manuais), sem o imposto cobrado pela Etsy. Taxas de IVA de outros países (OSS) e autoliquidação de serviços estrangeiros (ex.: taxas Etsy) não estão incluídas: o contabilista trata.</p>
@@ -100,7 +110,14 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
                   <tr key={d.id} className="relative hover:bg-cream/70">
                     <td className="px-2 py-2.5 whitespace-nowrap">{d.date ? new Date(`${d.date}T12:00:00`).toLocaleDateString("pt-PT") : "—"}</td>
                     <td className="px-2 py-2.5"><Link href={`/admin/accounting/docs/${d.id}`} className="after:absolute after:inset-0"><FileText className="mr-1 inline h-4 w-4 text-ink-soft" />{kindLabel(d)}</Link></td>
-                    <td className="px-2 py-2.5">{d.party_name ?? <span className="text-ink-soft">{d.file_name}</span>}</td>
+                    <td className="px-2 py-2.5">
+                      {d.party_name ?? <span className="text-ink-soft">{d.file_name}</span>}
+                      {d.direction === "purchase" && purchaseRegime(d.party_country, d.vat) !== "domestic" && (
+                        <span className={clsx("ml-1.5 rounded px-1.5 py-0.5 align-middle text-[0.6rem] font-bold", purchaseRegime(d.party_country, d.vat) === "foreign_vat" ? "bg-coral-tint text-coral-ink" : "bg-azulejo-tint text-azulejo-deep")}>
+                          {d.party_country} · {regimeLabel[purchaseRegime(d.party_country, d.vat)]}{d.vies_valid === false ? " · VIES ✗" : ""}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-2.5 text-ink-soft">{d.number ?? "—"}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums">{eur(d.net, 2)}</td>
                     <td className="px-2 py-2.5 text-right tabular-nums">{eur(d.vat, 2)}</td>

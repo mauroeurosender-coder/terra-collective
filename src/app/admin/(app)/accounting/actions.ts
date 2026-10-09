@@ -5,6 +5,8 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseServer } from "@/lib/supabase/server";
 import { invalidateCatalog } from "@/lib/data/source";
 import { extractInvoice, geminiConfigured } from "@/lib/server/gemini";
+import { checkVies } from "@/lib/server/vies";
+import { cleanVatNumber, purchaseRegime } from "@/lib/vat-regime";
 
 type Result = { ok: true; id?: string; message?: string } | { ok: false; error: string };
 const c = (euros: number) => Math.round((Number(euros) || 0) * 100);
@@ -52,7 +54,7 @@ export async function registerUpload(input: { path: string; fileName: string; mi
       .update({
         kind: x.kind === "credit_note" ? "credit_note" : input.kind,
         party_name: x.supplier_name || null,
-        party_nif: x.supplier_nif?.replace(/\D/g, "") || null,
+        party_nif: cleanVatNumber(x.supplier_nif, x.supplier_country) || null,
         party_country: (x.supplier_country || "PT").slice(0, 2).toUpperCase(),
         number: x.number || null,
         date: /^\d{4}-\d{2}-\d{2}$/.test(x.date) ? x.date : new Date().toISOString().slice(0, 10),
@@ -77,10 +79,30 @@ export async function registerUpload(input: { path: string; fileName: string; mi
         })),
       );
     }
+    const country = (x.supplier_country || "PT").slice(0, 2).toUpperCase();
+    if (input.direction === "purchase" && country !== "PT" && x.supplier_nif) await runVies(sb, doc.id, country, x.supplier_nif);
     return { ok: true, id: doc.id, message: "Documento lido automaticamente. Confirme os dados." };
   } catch (e) {
     return { ok: true, id: doc.id, message: `Ficheiro guardado, mas a leitura automática falhou (${(e as Error).message}). Preencha os dados.` };
   }
+}
+
+async function runVies(sb: Awaited<ReturnType<typeof supabaseServer>>, id: string, country: string, nif: string) {
+  if (purchaseRegime(country, 0) === "import") return null;
+  const r = await checkVies(country, nif);
+  if (r) await sb.from("accounting_docs").update({ vies_valid: r.valid, vies_name: r.name, vies_checked_at: new Date().toISOString() }).eq("id", id);
+  return r;
+}
+
+/** Re-checks the supplier’s VAT number in VIES. */
+export async function checkDocVies(id: string): Promise<Result> {
+  const sb = await owner();
+  const { data: d } = await sb.from("accounting_docs").select("party_country, party_nif").eq("id", id).single();
+  if (!d?.party_nif || !d.party_country) return { ok: false, error: "Indique o país e o número de IVA do fornecedor." };
+  const r = await runVies(sb, id, d.party_country, d.party_nif);
+  revalidatePath(`/admin/accounting/docs/${id}`);
+  if (!r) return { ok: false, error: "O serviço VIES não respondeu (acontece com frequência). Tente daqui a pouco." };
+  return { ok: true, message: r.valid ? `Número de IVA válido${r.name ? `: ${r.name}` : ""}.` : "Número de IVA NÃO válido no VIES." };
 }
 
 export type DocInput = {
@@ -107,7 +129,7 @@ export async function saveDoc(id: string, d: DocInput): Promise<Result> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) return { ok: false, error: "Indique a data do documento." };
   const { error } = await sb
     .from("accounting_docs")
-    .update({ kind: d.kind, party_name: d.party_name || null, party_nif: d.party_nif.replace(/\D/g, "") || null, party_country: d.party_country || "PT", number: d.number || null, date: d.date, net: d.net, vat: d.vat, total: d.total, vat_lines: d.vat_lines, category: d.category, deductible: d.deductible, notes: d.notes || null })
+    .update({ kind: d.kind, party_name: d.party_name || null, party_nif: cleanVatNumber(d.party_nif, d.party_country) || null, party_country: d.party_country || "PT", number: d.number || null, date: d.date, net: d.net, vat: d.vat, total: d.total, vat_lines: d.vat_lines, category: d.category, deductible: d.deductible, notes: d.notes || null })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
   await sb.from("accounting_doc_lines").delete().eq("doc_id", id);
@@ -124,16 +146,18 @@ export async function confirmDoc(id: string): Promise<Result> {
   if (!doc) return { ok: false, error: "Documento não encontrado." };
   if (!doc.date || !doc.total) return { ok: false, error: "Preencha a data e o total antes de confirmar." };
   let moved = 0;
+  const vatIsCost = doc.direction === "purchase" && (!doc.deductible || purchaseRegime(doc.party_country, doc.vat) === "foreign_vat");
   if (doc.direction === "purchase" && doc.category === "goods" && !doc.stock_applied) {
     const sign = doc.kind === "credit_note" ? -1 : 1;
-    for (const l of doc.accounting_doc_lines as { variant_id: string | null; apply_stock: boolean; quantity: number; unit_net: number }[]) {
+    for (const l of doc.accounting_doc_lines as { variant_id: string | null; apply_stock: boolean; quantity: number; unit_net: number; vat_rate: number }[]) {
       if (!l.variant_id || !l.apply_stock) continue;
       const qty = Math.round(Number(l.quantity)) * sign;
       if (!qty) continue;
       if (sign > 0) {
         const { data: v } = await sb.from("variants").select("stock, cost").eq("id", l.variant_id).single();
         const oldStock = Math.max(0, v?.stock ?? 0);
-        const cost = v?.cost != null && oldStock > 0 ? Math.round((oldStock * v.cost + qty * l.unit_net) / (oldStock + qty)) : l.unit_net;
+        const unit = vatIsCost ? Math.round(l.unit_net * (1 + Number(l.vat_rate) / 100)) : l.unit_net;
+        const cost = v?.cost != null && oldStock > 0 ? Math.round((oldStock * v.cost + qty * unit) / (oldStock + qty)) : unit;
         await sb.from("variants").update({ cost }).eq("id", l.variant_id);
       }
       const { error } = await sb.rpc("adjust_stock", { p_variant: l.variant_id, p_qty: qty });

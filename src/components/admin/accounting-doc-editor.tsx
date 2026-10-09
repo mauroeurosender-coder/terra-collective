@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import clsx from "clsx";
 import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, Plus, RotateCcw, Trash2 } from "lucide-react";
-import { confirmDoc, deleteDoc, saveDoc, unconfirmDoc, type DocInput } from "@/app/admin/(app)/accounting/actions";
+import { checkDocVies, confirmDoc, deleteDoc, saveDoc, unconfirmDoc, type DocInput } from "@/app/admin/(app)/accounting/actions";
+import { EU_COUNTRIES, purchaseRegime, regimeLabel, selfAssessedVat } from "@/lib/vat-regime";
 import { Card, eur } from "./ui";
 
 type Variant = { id: string; label: string };
@@ -21,7 +22,7 @@ function MoneyField({ label, value, onChange, disabled, className }: { label: st
   return <input aria-label={label} inputMode="decimal" disabled={disabled} value={t} onChange={(e) => setT(e.target.value)} onBlur={() => { const c = toC(t); setLast(c); onChange(c); setT(fromC(c)); }} className={clsx("field py-1.5 text-sm tabular-nums", className)} />;
 }
 
-export function AccountingDocEditor({ id, direction, initial, confirmed, stockApplied, fileUrl, isPdf, variants }: { id: string; direction: "purchase" | "sale"; initial: DocInput; confirmed: boolean; stockApplied: boolean; fileUrl: string | null; isPdf: boolean; variants: Variant[] }) {
+export function AccountingDocEditor({ id, direction, initial, confirmed, stockApplied, fileUrl, isPdf, variants, vies }: { id: string; direction: "purchase" | "sale"; initial: DocInput; confirmed: boolean; stockApplied: boolean; fileUrl: string | null; isPdf: boolean; variants: Variant[]; vies: { valid: boolean | null; name: string | null; checkedAt: string | null } }) {
   const router = useRouter();
   const [d, setD] = useState(initial);
   const [pending, start] = useTransition();
@@ -86,7 +87,14 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
             </div>
             <div><label className="label" htmlFor="dn">N.º do documento</label><input id="dn" disabled={locked} value={d.number} onChange={(e) => set("number", e.target.value)} className="field py-2 text-sm" /></div>
             <div className="sm:col-span-2"><label className="label" htmlFor="dp">{direction === "purchase" ? "Fornecedor" : "Cliente"}</label><input id="dp" disabled={locked} value={d.party_name} onChange={(e) => set("party_name", e.target.value)} className="field py-2 text-sm" /></div>
-            <div><label className="label" htmlFor="dnif">NIF</label><input id="dnif" disabled={locked} value={d.party_nif} onChange={(e) => set("party_nif", e.target.value)} className="field py-2 text-sm" /></div>
+            <div>
+              <label className="label" htmlFor="dcountry">País</label>
+              <select id="dcountry" disabled={locked} value={d.party_country || "PT"} onChange={(e) => set("party_country", e.target.value)} className="field py-2 text-sm">
+                {[...EU_COUNTRIES].sort().map((c) => <option key={c} value={c}>{c}{c === "PT" ? " · Portugal" : " · UE"}</option>)}
+                {["GB", "CH", "NO", "US", "CN", "IN", "TR", "MA", "BR"].map((c) => <option key={c} value={c}>{c} · fora da UE</option>)}
+              </select>
+            </div>
+            <div><label className="label" htmlFor="dnif">{d.party_country && d.party_country !== "PT" ? "N.º de IVA (sem prefixo do país)" : "NIF"}</label><input id="dnif" disabled={locked} value={d.party_nif} onChange={(e) => set("party_nif", e.target.value)} className="field py-2 text-sm" /></div>
             <div><label className="label" htmlFor="dd">Data</label><input id="dd" type="date" disabled={locked} value={d.date} onChange={(e) => set("date", e.target.value)} className="field py-2 text-sm" /></div>
             {direction === "purchase" && (
               <>
@@ -104,6 +112,8 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
             )}
           </div>
         </Card>
+
+        {direction === "purchase" && <RegimeCard country={d.party_country} vat={d.vat} net={d.net} vies={vies} onRecheck={() => run(() => checkDocVies(id))} pending={pending} />}
 
         <Card title="Linhas" action={!locked && <button type="button" onClick={recalcFromLines} className="text-xs font-medium text-azulejo hover:underline">Recalcular totais a partir das linhas</button>}>
           <div className="-mx-2 overflow-x-auto">
@@ -172,5 +182,40 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
         </div>
       </div>
     </div>
+  );
+}
+
+function RegimeCard({ country, vat, net, vies, onRecheck, pending }: { country: string; vat: number; net: number; vies: { valid: boolean | null; name: string | null; checkedAt: string | null }; onRecheck: () => void; pending: boolean }) {
+  const regime = purchaseRegime(country, vat);
+  if (regime === "domestic") return null;
+  return (
+    <Card title="IVA desta compra">
+      <p className="flex flex-wrap items-center gap-2 text-sm">
+        <span className={clsx("rounded-full px-2.5 py-0.5 text-xs font-bold", regime === "foreign_vat" ? "bg-coral-tint text-coral-ink" : regime === "intra_eu" ? "bg-azulejo-tint text-azulejo-deep" : "bg-cream-deep text-ink")}>{regimeLabel[regime]}</span>
+        {regime !== "import" && (
+          <span className="text-ink-soft">
+            VIES:{" "}
+            {vies.valid === true ? <b className="text-olive">✓ válido{vies.name ? ` · ${vies.name}` : ""}</b> : vies.valid === false ? <b className="text-coral-ink">✗ número de IVA não válido</b> : "não verificado"}
+            {" · "}
+            <button type="button" disabled={pending} onClick={onRecheck} className="font-medium text-azulejo hover:underline">Verificar de novo</button>
+          </span>
+        )}
+      </p>
+      {regime === "intra_eu" && (
+        <p className="mt-3 text-sm text-ink-soft">
+          Fatura de outro país da UE sem IVA: autoliquida o IVA português. Entra na declaração <b>{eur(selfAssessedVat(net), 2)}</b> (23% de {eur(net, 2)}) como IVA liquidado <b>e</b> como IVA dedutível, ou seja, efeito zero.
+        </p>
+      )}
+      {regime === "foreign_vat" && (
+        <p className="mt-3 flex items-start gap-2 rounded-xl bg-coral-tint px-3 py-2 text-sm text-coral-ink">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Este fornecedor cobrou IVA do país dele ({eur(vat, 2)}). <b>Não é dedutível em Portugal</b>, por isso conta como custo do produto. Para as próximas compras, dê-lhe o seu número de IVA (PT + NIF) e peça fatura sem IVA (entrega intracomunitária).</span>
+        </p>
+      )}
+      {regime === "import" && (
+        <p className="mt-3 text-sm text-ink-soft">Compra fora da UE: o IVA e os direitos são pagos na importação. Carregue também o documento da alfândega ou da transportadora (DHL, UPS, CTT…) com o IVA de importação, que é esse que se deduz.</p>
+      )}
+      {vies.valid === false && regime !== "import" && <p className="mt-2 text-sm text-coral-ink">Com o número inválido no VIES, a compra pode não ser aceite como intracomunitária. Confirme o número com o fornecedor.</p>}
+    </Card>
   );
 }

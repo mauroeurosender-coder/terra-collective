@@ -48,7 +48,8 @@ const schema = {
 const prompt = `Este documento é uma fatura, fatura-recibo, recibo ou nota de crédito de um fornecedor (normalmente português).
 Extrai os dados exatamente como aparecem. Regras:
 - kind: "credit_note" se for nota de crédito; "invoice" para fatura ou fatura-recibo; "receipt" para recibo sem fatura; senão "other".
-- supplier_*: o EMITENTE (fornecedor), não o cliente. supplier_nif só com dígitos (ex: 501234567); supplier_country em código ISO de 2 letras.
+- supplier_*: o EMITENTE (fornecedor), não o cliente. supplier_nif = NIF/número de IVA do fornecedor sem espaços e sem o prefixo do país (ex: 501234567, B12345678, 0403170701); supplier_country = país do fornecedor em código ISO de 2 letras (ex: PT, ES, BE).
+- Se a fatura não tiver IVA por ser uma entrega intracomunitária (autoliquidação / reverse charge / art. 138.º da Diretiva IVA), vat = 0 e vat_rate = 0.
 - date: data de emissão no formato YYYY-MM-DD.
 - Valores em euros com ponto decimal. net = total sem IVA; vat = total de IVA; total = total com IVA.
 - vat_lines: um elemento por taxa de IVA do quadro-resumo (taxa em %, base tributável, valor do IVA). Isento = taxa 0.

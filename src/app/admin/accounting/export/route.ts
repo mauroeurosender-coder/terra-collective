@@ -5,6 +5,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { stringifyCsv } from "@/lib/admin/csv";
 import { quarterRange, vatSummary } from "@/lib/admin/tax";
 import { loadProfitOrders } from "@/lib/admin/profit";
+import { purchaseRegime } from "@/lib/vat-regime";
 
 const eur = (c: number) => (c / 100).toFixed(2).replace(".", ",");
 
@@ -24,12 +25,12 @@ export async function GET(req: Request) {
 
   const zip = new JSZip();
   const root = zip.folder(`Terra Collective ${q.key}`)!;
-  const folders = { purchase: root.folder("1 Compras")!, purchaseCn: root.folder("2 Notas de crédito de fornecedores")!, saleCn: root.folder("3 Notas de crédito emitidas")!, other: root.folder("4 Outros")! };
+  const folders = { purchase: root.folder("1 Compras")!, intraEu: root.folder("1b Aquisições intracomunitárias")!, purchaseCn: root.folder("2 Notas de crédito de fornecedores")!, saleCn: root.folder("3 Notas de crédito emitidas")!, other: root.folder("4 Outros")! };
   for (const d of docs ?? []) {
     if (!d.file_path) continue;
     const { data: file } = await sb.storage.from("accounting").download(d.file_path);
     if (!file) continue;
-    const folder = d.direction === "sale" ? folders.saleCn : d.kind === "credit_note" ? folders.purchaseCn : d.kind === "invoice" || d.kind === "receipt" ? folders.purchase : folders.other;
+    const folder = d.direction === "sale" ? folders.saleCn : d.kind === "credit_note" ? folders.purchaseCn : purchaseRegime(d.party_country, d.vat) === "intra_eu" ? folders.intraEu : d.kind === "invoice" || d.kind === "receipt" ? folders.purchase : folders.other;
     const ext = (d.file_name ?? d.file_path).split(".").pop();
     const safe = `${d.date} ${d.party_name ?? "documento"} ${d.number ?? ""}`.replace(/[^\p{L}\p{N} ._-]/gu, "").trim().slice(0, 100);
     folder.file(`${safe}.${ext}`, await file.arrayBuffer());
@@ -38,8 +39,8 @@ export async function GET(req: Request) {
   root.file(
     "Documentos.csv",
     stringifyCsv([
-      ["Data", "Tipo", "Movimento", "Entidade", "NIF", "País", "N.º documento", "Categoria", "Base", "IVA", "Total", "IVA dedutível", "Estado"],
-      ...(docs ?? []).map((d) => [d.date, d.kind === "credit_note" ? "Nota de crédito" : d.kind === "invoice" ? "Fatura" : d.kind, d.direction === "purchase" ? "Compra" : "Venda", d.party_name, d.party_nif, d.party_country, d.number, d.category, eur(d.net), eur(d.vat), eur(d.total), d.deductible ? "Sim" : "Não", d.status === "confirmed" ? "Confirmado" : "Rascunho"]),
+      ["Data", "Tipo", "Movimento", "Regime IVA", "Entidade", "NIF/IVA", "País", "VIES", "N.º documento", "Categoria", "Base", "IVA", "Total", "IVA dedutível", "Estado"],
+      ...(docs ?? []).map((d) => [d.date, d.kind === "credit_note" ? "Nota de crédito" : d.kind === "invoice" ? "Fatura" : d.kind, d.direction === "purchase" ? "Compra" : "Venda", d.direction === "purchase" ? purchaseRegime(d.party_country, d.vat) : "", d.party_name, d.party_nif, d.party_country, d.vies_valid == null ? "" : d.vies_valid ? "Válido" : "Inválido", d.number, d.category, eur(d.net), eur(d.vat), eur(d.total), d.deductible ? "Sim" : "Não", d.status === "confirmed" ? "Confirmado" : "Rascunho"]),
     ]),
   );
   root.file(
@@ -63,6 +64,11 @@ export async function GET(req: Request) {
       `COMPRAS (IVA dedutível)`,
       ...vat.purchases.goods.map((g) => `  Existências a ${g.rate}%: base ${eur(g.base)} €, IVA ${eur(g.vat)} €`),
       `  Outros bens e serviços: base ${eur(vat.purchases.other.base)} €, IVA ${eur(vat.purchases.other.vat)} €`,
+      ``,
+      `AQUISIÇÕES INTRACOMUNITÁRIAS DE BENS`,
+      `  Base: ${eur(vat.intraEu.base)} €   IVA autoliquidado (23%): ${eur(vat.intraEu.vat)} € — incluído no IVA liquidado e no dedutível (existências 23%)`,
+      `  IVA estrangeiro pago a fornecedores da UE (não dedutível em PT): ${eur(vat.foreignVat.vat)} €`,
+      `  Compras fora da UE (IVA de importação pelo documento aduaneiro): base ${eur(vat.imports.base)} €`,
       ``,
       `IVA liquidado: ${eur(vat.output)} €`,
       `IVA dedutível: ${eur(vat.input)} €`,
