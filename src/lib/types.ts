@@ -56,6 +56,10 @@ export type Product = {
   foodSafe?: boolean;
   /** Not listed in collections/search (e.g. gift cards). */
   hidden?: boolean;
+  /** Search-engine title/description; fall back to name/short when empty. */
+  seo?: { title: L; description: L };
+  /** Old URLs that redirect here after a rename. */
+  previousSlugs?: string[];
 };
 
 export type Review = {

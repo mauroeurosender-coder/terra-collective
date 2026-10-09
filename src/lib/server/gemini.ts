@@ -78,3 +78,26 @@ export async function extractInvoice(file: Blob, mime: string): Promise<Extracte
     throw new Error("Não foi possível ler o documento. Preencha os dados à mão.");
   }
 }
+
+/** Text-only call that returns JSON matching `responseSchema`. */
+export async function generateJson<T>(text: string, responseSchema: object, temperature = 0.4): Promise<T> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY não está configurada.");
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: { temperature, response_mime_type: "application/json", response_schema: responseSchema },
+    }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Gemini: ${j?.error?.message ?? res.status}`);
+  const out = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+  try {
+    return JSON.parse(out) as T;
+  } catch {
+    throw new Error("O Gemini devolveu uma resposta inválida. Tente novamente.");
+  }
+}

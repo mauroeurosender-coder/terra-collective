@@ -86,6 +86,12 @@ export async function getProduct(slug: string) {
   return products.find((p) => p.slug === slug) ?? null;
 }
 
+/** Product that used to live at this URL before it was renamed. */
+export async function getRenamedProduct(slug: string) {
+  const { products } = await loadCatalog();
+  return products.find((p) => p.previousSlugs?.includes(slug)) ?? null;
+}
+
 export async function getProductsBySlugs(slugs: string[]) {
   const { products } = await loadCatalog();
   return slugs.map((s) => products.find((p) => p.slug === s)).filter((p): p is Product => !!p);

@@ -109,6 +109,8 @@ async function fromSupabase(): Promise<Catalog> {
       rating: own.length ? own.reduce((n, r) => n + r.rating, 0) / own.length : 0,
       reviewCount: own.length,
       pairsWith: p.pairs_with ?? [],
+      seo: { title: { en: "", pt: "", ...p.seo?.title }, description: { en: "", pt: "", ...p.seo?.description } },
+      previousSlugs: p.seo?.previous_slugs ?? [],
       wallPiece: p.wall_piece,
       foodSafe: p.food_safe,
       hidden: p.hidden,

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Plus, Search, Upload } from "lucide-react";
+import { Download, Plus, Search, Sparkles, Upload } from "lucide-react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { EmptyState, NotConnected, PageHeader } from "@/components/admin/ui";
@@ -43,6 +43,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         actions={
           <>
             <a download href="/admin/products/export" className="btn-outline min-h-10 py-2 text-sm"><Download className="h-4 w-4" /> Export CSV</a>
+            <Link href="/admin/products/seo" className="btn-outline min-h-10 py-2 text-sm"><Sparkles className="h-4 w-4" /> SEO</Link>
             <Link href="/admin/products/import" className="btn-outline min-h-10 py-2 text-sm"><Upload className="h-4 w-4" /> Import</Link>
             <Link href="/admin/products/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New product</Link>
           </>

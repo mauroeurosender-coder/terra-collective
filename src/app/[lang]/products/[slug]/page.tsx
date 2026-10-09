@@ -1,10 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import { ChevronDown, ShieldCheck, Utensils } from "lucide-react";
 import { isLocale, locales, store } from "@/lib/config";
 import { fmt, href, t } from "@/lib/i18n";
-import { getCollection, getProduct, getProducts, getProductsBySlugs, getRelated, getReviews, toLite } from "@/lib/data/catalog";
+import { getCollection, getProduct, getProducts, getProductsBySlugs, getRelated, getRenamedProduct, getReviews, toLite } from "@/lib/data/catalog";
 import { pageMeta, resolveLang, toCard } from "@/lib/page";
 import { ProductView } from "@/components/product/product-view";
 import { ProductCard } from "@/components/product/product-card";
@@ -23,7 +23,10 @@ export async function generateMetadata({ params }: PageProps<"/[lang]/products/[
   const { lang, slug } = await params;
   const p = await getProduct(slug);
   if (!p || !isLocale(lang)) return {};
-  return pageMeta(lang, `/products/${slug}`, t(p.name, lang), t(p.short, lang), p.images[0]);
+  const seoTitle = p.seo?.title[lang] || p.seo?.title.en;
+  const meta = pageMeta(lang, `/products/${slug}`, seoTitle || t(p.name, lang), p.seo?.description[lang] || t(p.short, lang) || p.seo?.description.en, p.images[0]);
+  // A written SEO title is already complete (~60 chars), so skip the " · Terra Collective" suffix.
+  return seoTitle ? { ...meta, title: { absolute: seoTitle } } : meta;
 }
 
 export default async function ProductPage({ params, searchParams }: PageProps<"/[lang]/products/[slug]">) {
@@ -31,7 +34,11 @@ export default async function ProductPage({ params, searchParams }: PageProps<"/
   const { slug } = await params;
   const sp = await searchParams;
   const product = await getProduct(slug);
-  if (!product) notFound();
+  if (!product) {
+    const renamed = await getRenamedProduct(slug);
+    if (renamed) permanentRedirect(href(lang, `/products/${renamed.slug}`));
+    notFound();
+  }
 
   const [collection, reviews, pairs, related] = await Promise.all([
     getCollection(product.collection),
