@@ -16,7 +16,7 @@ const env = Object.fromEntries(
 const url = env.NEXT_PUBLIC_SUPABASE_URL;
 const key = env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) throw new Error("Supabase keys missing in .env.local");
-const headers = { apikey: key, authorization: `Bearer ${key}`, "content-type": "application/json" };
+const headers = { apikey: key, ...(key.startsWith("eyJ") ? { authorization: `Bearer ${key}` } : {}), "content-type": "application/json" };
 
 async function rest(path: string, init: RequestInit = {}) {
   const res = await fetch(`${url}/rest/v1/${path}`, { ...init, headers: { ...headers, prefer: "return=representation", ...(init.headers ?? {}) } });

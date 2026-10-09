@@ -13,7 +13,8 @@ const env = Object.fromEntries(
 );
 const URL_ = env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = env.SUPABASE_SERVICE_ROLE_KEY;
-const h = { apikey: KEY, authorization: `Bearer ${KEY}` };
+// New-style keys (sb_secret_…) go only in the apikey header; old JWT keys also as Bearer.
+const h = KEY.startsWith("eyJ") ? { apikey: KEY, authorization: `Bearer ${KEY}` } : { apikey: KEY };
 
 const TABLES = [
   "collections", "products", "product_media", "variants", "journal_posts", "pages", "settings", "discounts", "gift_cards",
