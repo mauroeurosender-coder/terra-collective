@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, Download, FileText, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Info } from "lucide-react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { geminiConfigured } from "@/lib/server/gemini";
@@ -8,6 +8,7 @@ import { obligations, quarterOf, quarterRange, shiftQuarter, vatSummary } from "
 import { Card, NotConnected, PageHeader, eur } from "@/components/admin/ui";
 import { AccountingUpload } from "@/components/admin/accounting-upload";
 import { TaxCalendar } from "@/components/admin/tax-calendar";
+import { AccountingDocsTable } from "@/components/admin/accounting-docs-table";
 import { purchaseRegime, regimeLabel } from "@/lib/vat-regime";
 
 export const metadata = { title: "Contabilidade" };
@@ -102,32 +103,25 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
         {!docs?.length ? (
           <p className="text-sm text-ink-soft">Ainda não há documentos neste trimestre.</p>
         ) : (
-          <div className="-mx-2 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead className="text-left text-xs text-ink-soft"><tr><th className="px-2 pb-2 font-medium">Data</th><th className="px-2 pb-2 font-medium">Tipo</th><th className="px-2 pb-2 font-medium">Entidade</th><th className="px-2 pb-2 font-medium">N.º</th><th className="px-2 pb-2 text-right font-medium">Base</th><th className="px-2 pb-2 text-right font-medium">IVA</th><th className="px-2 pb-2 text-right font-medium">Total</th><th className="px-2 pb-2 font-medium">Estado</th></tr></thead>
-              <tbody className="divide-y divide-line">
-                {docs.map((d: any) => (
-                  <tr key={d.id} className="relative hover:bg-cream/70">
-                    <td className="px-2 py-2.5 whitespace-nowrap">{d.date ? new Date(`${d.date}T12:00:00`).toLocaleDateString("pt-PT") : "—"}</td>
-                    <td className="px-2 py-2.5"><Link href={`/admin/accounting/docs/${d.id}`} className="after:absolute after:inset-0"><FileText className="mr-1 inline h-4 w-4 text-ink-soft" />{kindLabel(d)}</Link></td>
-                    <td className="px-2 py-2.5">
-                      {d.party_name ?? <span className="text-ink-soft">{d.file_name}</span>}
-                      {d.direction === "purchase" && purchaseRegime(d.party_country, d.vat) !== "domestic" && (
-                        <span className={clsx("ml-1.5 rounded px-1.5 py-0.5 align-middle text-[0.6rem] font-bold", purchaseRegime(d.party_country, d.vat) === "foreign_vat" ? "bg-coral-tint text-coral-ink" : "bg-azulejo-tint text-azulejo-deep")}>
-                          {d.party_country} · {regimeLabel[purchaseRegime(d.party_country, d.vat)]}{d.vies_valid === false ? " · VIES ✗" : ""}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-2 py-2.5 text-ink-soft">{d.number ?? "—"}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums">{eur(d.net, 2)}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums">{eur(d.vat, 2)}</td>
-                    <td className="px-2 py-2.5 text-right tabular-nums">{eur(d.total, 2)}</td>
-                    <td className="px-2 py-2.5"><span className={clsx("rounded-full px-2 py-0.5 text-xs font-semibold", d.status === "confirmed" ? "bg-olive-tint text-olive" : "bg-mustard-tint text-ink")}>{d.status === "confirmed" ? (d.stock_applied ? "Confirmado · stock" : "Confirmado") : "Por confirmar"}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <AccountingDocsTable
+            docs={docs.map((d: any) => {
+              const regime = d.direction === "purchase" ? purchaseRegime(d.party_country, d.vat) : "domestic";
+              return {
+                id: d.id,
+                date: d.date ? new Date(`${d.date}T12:00:00`).toLocaleDateString("pt-PT") : "—",
+                kind: kindLabel(d),
+                party: d.party_name,
+                fileName: d.file_name,
+                badge: regime === "domestic" ? null : { text: `${d.party_country} · ${regimeLabel[regime]}${d.vies_valid === false ? " · VIES ✗" : ""}`, foreign: regime === "foreign_vat" },
+                number: d.number,
+                net: d.net,
+                vat: d.vat,
+                total: d.total,
+                confirmed: d.status === "confirmed",
+                stockApplied: d.stock_applied,
+              };
+            })}
+          />
         )}
       </Card>
     </div>

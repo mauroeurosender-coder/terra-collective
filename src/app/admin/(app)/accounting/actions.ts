@@ -197,6 +197,22 @@ export async function confirmDoc(id: string): Promise<Result> {
   return { ok: true, message: moved ? `Confirmado. Stock atualizado (${moved} unidade${moved === 1 ? "" : "s"}) e custos dos produtos recalculados.` : "Confirmado." };
 }
 
+/** Confirms several documents, one after the other; documents that fail are left as drafts and reported. */
+export async function confirmDocs(ids: string[]): Promise<Result> {
+  await owner();
+  let ok = 0;
+  const failed: string[] = [];
+  for (const id of ids) {
+    const r = await confirmDoc(id);
+    if (r.ok) ok++;
+    else failed.push(r.error);
+  }
+  revalidatePath("/admin/accounting");
+  if (!failed.length) return { ok: true, message: `${ok} documento${ok === 1 ? "" : "s"} confirmado${ok === 1 ? "" : "s"}.` };
+  const reasons = [...new Set(failed)].join(" ");
+  return { ok: false, error: `${ok} confirmado${ok === 1 ? "" : "s"}, ${failed.length} por confirmar: ${reasons}` };
+}
+
 /** Back to draft; reverses the stock movement (product costs keep their last value). */
 export async function unconfirmDoc(id: string): Promise<Result> {
   const sb = await owner();
