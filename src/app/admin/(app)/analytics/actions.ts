@@ -7,12 +7,13 @@ import { supabaseServer } from "@/lib/supabase/server";
 type Result = { ok: true; message?: string } | { ok: false; error: string };
 
 /** Saves unit costs for many variants at once (cents; null clears). */
-export async function saveVariantCosts(costs: { id: string; cost: number | null }[]): Promise<Result> {
+export async function saveVariantCosts(costs: { id: string; cost: number | null; weight?: number | null }[]): Promise<Result> {
   await requireAdmin();
   const sb = await supabaseServer();
   for (const c of costs) {
     if (c.cost != null && (!Number.isInteger(c.cost) || c.cost < 0)) return { ok: false, error: "Costs must be zero or more." };
-    const { error } = await sb.from("variants").update({ cost: c.cost }).eq("id", c.id);
+    if (c.weight != null && (!Number.isInteger(c.weight) || c.weight < 0 || c.weight > 100000)) return { ok: false, error: "Weights must be whole grams." };
+    const { error } = await sb.from("variants").update(c.weight === undefined ? { cost: c.cost } : { cost: c.cost, weight_g: c.weight }).eq("id", c.id);
     if (error) return { ok: false, error: error.message };
   }
   revalidatePath("/admin/analytics");
@@ -41,10 +42,10 @@ export async function deleteExpense(id: string): Promise<Result> {
 }
 
 /** Real costs for one order (null = use the defaults). */
-export async function saveOrderCosts(orderId: string, c: { shipping: number | null; packaging: number | null; fees: number | null }): Promise<Result> {
+export async function saveOrderCosts(orderId: string, c: { shipping: number | null; packaging: number | null; fees: number | null; duties: number | null }): Promise<Result> {
   await requireAdmin();
   const sb = await supabaseServer();
-  const { error } = await sb.from("orders").update({ shipping_cost: c.shipping, packaging_cost: c.packaging, fees_cost: c.fees }).eq("id", orderId);
+  const { error } = await sb.from("orders").update({ shipping_cost: c.shipping, packaging_cost: c.packaging, fees_cost: c.fees, duties_cost: c.duties }).eq("id", orderId);
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/admin/orders/${orderId}`);
   revalidatePath("/admin/analytics");

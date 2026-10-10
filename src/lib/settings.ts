@@ -9,9 +9,24 @@ import { defaultThemeSettings, type ThemeSettings } from "./themes";
 import { defaultHomeLayout, type HomeDesigns, type HomeSection } from "./home-layout";
 
 /** Default costs used when an order has no real value entered. Money in cents, rates in %. */
+/** Carrier price zones (not the same as the shop’s own shipping zones). */
+export type RateZone = "PT" | "EUROPE" | "US" | "ROW";
+/** One weight bracket: parcels up to `upTo` grams cost `price` cents. */
+export type RateRow = { upTo: number; price: number };
+export type CarrierRates = { name: string; zones: Record<RateZone, RateRow[]> };
+/** Import duties you pay up front (e.g. US through Zonos): pct of the goods value + fixed fee per order. */
+export type DutyRule = { country: string; pct: number; fixed: number; label: string };
+
 export type ProfitSettings = {
   packaging: number;
+  /** Flat cost per order, used only when a product in the order has no weight or the table for that zone is empty. */
   shipping: { PT: number; EU: number; ROW: number };
+  carriers: { ctt: CarrierRates; fedex: CarrierRates };
+  /** Orders heavier than this (grams) use the FedEx table, when it has prices. null = always CTT. */
+  bulkAboveGrams: number | null;
+  /** Box and filling, added to the products’ weight (grams). */
+  packagingWeight: number;
+  duties: DutyRule[];
   etsy: { transactionPct: number; processingPct: number; processingFixed: number; listingFee: number };
   stripe: { pct: number; fixed: number };
 };
@@ -19,6 +34,22 @@ export type ProfitSettings = {
 export const defaultProfitSettings = (): ProfitSettings => ({
   packaging: 150,
   shipping: { PT: 450, EU: 1000, ROW: 1500 },
+  // CTT without contract (2026 price list supplied by the owner). Portugal left empty: uses the flat amount until filled in.
+  carriers: {
+    ctt: {
+      name: "CTT",
+      zones: {
+        PT: [],
+        EUROPE: [{ upTo: 100, price: 580 }, { upTo: 250, price: 755 }, { upTo: 500, price: 980 }, { upTo: 1000, price: 1320 }, { upTo: 2000, price: 2120 }],
+        US: [{ upTo: 100, price: 790 }, { upTo: 250, price: 1010 }, { upTo: 500, price: 1570 }, { upTo: 1000, price: 2675 }, { upTo: 2000, price: 3925 }],
+        ROW: [{ upTo: 100, price: 755 }, { upTo: 250, price: 930 }, { upTo: 500, price: 1570 }, { upTo: 1000, price: 2675 }, { upTo: 2000, price: 3925 }],
+      },
+    },
+    fedex: { name: "FedEx", zones: { PT: [], EUROPE: [], US: [], ROW: [] } },
+  },
+  bulkAboveGrams: null,
+  packagingWeight: 0,
+  duties: [{ country: "US", pct: 10, fixed: 0, label: "US import duties (Zonos)" }],
   // Etsy (Portugal): 6.5% transaction fee on items + shipping, payment processing ~4% + €0.30, €0.18 listing renewal per item sold.
   etsy: { transactionPct: 6.5, processingPct: 4, processingFixed: 30, listingFee: 18 },
   // Stripe EEA cards (adjust to your Stripe pricing).

@@ -14,18 +14,18 @@ export async function ProfitView({ range, period, isOwner, section }: { range: R
   const [r, { data: sets }, { data: variants }, { data: exps }] = await Promise.all([
     getProfitReport(sb, range),
     sb.from("settings").select("key, value"),
-    sb.from("variants").select("id, sku, options, price, cost, image_index, position, products!inner(name, status, created_at, product_media(url, position, kind))").neq("products.status", "archived"),
+    sb.from("variants").select("id, sku, options, price, cost, weight_g, image_index, position, products!inner(name, status, created_at, product_media(url, position, kind))").neq("products.status", "archived"),
     sb.from("expenses").select("id, date, description, category, amount").gte("date", range.from.toISOString().slice(0, 10)).lt("date", range.to.toISOString().slice(0, 10)).order("date", { ascending: false }),
   ]);
   const t = r.totals;
   const costs: CostRow[] = ((variants ?? []) as any[])
     .map((v) => {
       const media = [...(v.products.product_media ?? [])].filter((m: any) => m.kind === "image").sort((a: any, b: any) => a.position - b.position);
-      return { id: v.id, product: v.products.name.en, variant: Object.values(v.options ?? {}).join(" · "), sku: v.sku, price: v.price, cost: v.cost, image: media[v.image_index ?? 0]?.url ?? media[0]?.url, _pos: v.position };
+      return { id: v.id, product: v.products.name.en, variant: Object.values(v.options ?? {}).join(" · "), sku: v.sku, price: v.price, cost: v.cost, weight: v.weight_g ?? null, image: media[v.image_index ?? 0]?.url ?? media[0]?.url, _pos: v.position };
     })
     .sort((a, b) => a.product.localeCompare(b.product) || a._pos - b._pos)
     .map(({ _pos, ...x }) => (void _pos, x));
-  const totalCosts = t.cogs + t.shipping + t.packaging + t.fees + t.expenses;
+  const totalCosts = t.cogs + t.shipping + t.packaging + t.fees + t.duties + t.expenses;
   const sub = (k: string, label: string) => (
     <Link href={`?view=profit&section=${k}&range=${range.key}`} aria-current={section === k ? "page" : undefined} className={clsx("rounded-full px-3.5 py-1.5 text-sm font-medium whitespace-nowrap", section === k ? "bg-ink text-cream" : "bg-paper text-ink-soft hover:text-ink")}>{label}</Link>
   );
@@ -34,9 +34,9 @@ export async function ProfitView({ range, period, isOwner, section }: { range: R
     <div className="space-y-4">
       <nav aria-label="Profit sections" className="flex gap-1.5 overflow-x-auto scrollbar-none">
         {sub("report", "Report")}
-        {sub("costs", `Product costs${r.missing.variantsWithoutCost ? ` (${r.missing.variantsWithoutCost} missing)` : ""}`)}
+        {sub("costs", `Costs & weights${r.missing.variantsWithoutCost ? ` (${r.missing.variantsWithoutCost} missing)` : ""}`)}
         {sub("expenses", "Other expenses")}
-        {sub("defaults", "Default costs")}
+        {sub("defaults", "Shipping & defaults")}
       </nav>
 
       {section === "costs" && <ProductCosts rows={costs} />}
@@ -69,13 +69,16 @@ export async function ProfitView({ range, period, isOwner, section }: { range: R
                 <Line label="VAT you owe the State" value={-t.vatOwed} muted />
                 <Line label="Revenue (excl. VAT)" value={t.revenue} strong />
                 <Line label="Product costs" value={-t.cogs} />
-                <Line label="Shipping (CTT)" value={-t.shipping} />
+                <Line label="Shipping labels (CTT / FedEx)" value={-t.shipping} />
                 <Line label="Packaging" value={-t.packaging} />
                 <Line label="Etsy & payment fees" value={-t.fees} />
+                {t.duties > 0 && <Line label="Import duties paid (Zonos)" value={-t.duties} />}
                 <Line label="Other expenses" value={-t.expenses} />
                 <Line label="Profit" value={t.profit} strong big />
               </dl>
               <p className="mt-4 text-xs text-ink-soft">
+                Shipping charged to customers: {eur(t.shippingCharged, 2)} (included in sales) vs {eur(t.shipping, 2)} paid in labels.{" "}
+                {r.flatShippingOrders > 0 ? `${r.flatShippingOrders} order${r.flatShippingOrders === 1 ? "" : "s"} used the flat shipping amount because a product has no weight: add weights under Product costs. ` : ""}
                 Taxes Etsy collected (GST, sales tax…) are excluded entirely. {r.estimatedShare > 0 ? `${Math.round(r.estimatedShare * 100)}% of orders use estimated shipping or fees. Enter real values on the order page or adjust the defaults.` : ""}
               </p>
             </Card>
@@ -84,7 +87,8 @@ export async function ProfitView({ range, period, isOwner, section }: { range: R
                 <BarList
                   rows={[
                     { key: "cogs", label: "Product costs", value: t.cogs },
-                    { key: "ship", label: "Shipping (CTT)", value: t.shipping },
+                    { key: "ship", label: "Shipping labels", value: t.shipping },
+                    { key: "duty", label: "Import duties", value: t.duties },
                     { key: "fees", label: "Etsy & payment fees", value: t.fees },
                     { key: "pack", label: "Packaging", value: t.packaging },
                     { key: "exp", label: "Other expenses", value: t.expenses },

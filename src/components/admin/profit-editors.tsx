@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import clsx from "clsx";
 import { Plus, Search, Trash2 } from "lucide-react";
-import type { ProfitSettings } from "@/lib/settings";
+import type { CarrierRates, DutyRule, ProfitSettings, RateRow, RateZone } from "@/lib/settings";
+import type { OrderProfit } from "@/lib/admin/profit";
 import { addExpense, deleteExpense, saveOrderCosts, saveVariantCosts } from "@/app/admin/(app)/analytics/actions";
 import { saveSetting } from "@/app/admin/(app)/content/actions";
 import { useSave } from "./fields";
@@ -33,37 +34,54 @@ function Money({ label, value, onChange, placeholder, className }: { label: stri
   );
 }
 
+function Grams({ label, value, onChange, className }: { label: string; value: number | null; onChange: (g: number | null) => void; className?: string }) {
+  const [text, setText] = useState(value == null ? "" : String(value));
+  return (
+    <input
+      aria-label={label}
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => setText(e.target.value.replace(/[^0-9]/g, ""))}
+      onBlur={() => onChange(text === "" ? null : Number(text))}
+      className={clsx("field py-1.5 text-sm tabular-nums", className)}
+    />
+  );
+}
+
 /* ------------------------------------------------------------------ Product costs */
 
-export type CostRow = { id: string; product: string; variant: string; sku: string; price: number; cost: number | null; image?: string };
+export type CostRow = { id: string; product: string; variant: string; sku: string; price: number; cost: number | null; weight: number | null; image?: string };
 
 export function ProductCosts({ rows }: { rows: CostRow[] }) {
   const router = useRouter();
   const [costs, setCosts] = useState<Record<string, number | null>>(() => Object.fromEntries(rows.map((r) => [r.id, r.cost])));
+  const [weights, setWeights] = useState<Record<string, number | null>>(() => Object.fromEntries(rows.map((r) => [r.id, r.weight])));
   const [q, setQ] = useState("");
-  const [onlyMissing, setOnlyMissing] = useState(rows.some((r) => r.cost == null));
+  const [onlyMissing, setOnlyMissing] = useState(rows.some((r) => r.cost == null || r.weight == null));
   const s = useSave();
-  const changed = rows.filter((r) => costs[r.id] !== r.cost);
+  const changed = rows.filter((r) => costs[r.id] !== r.cost || weights[r.id] !== r.weight);
   const shown = useMemo(
-    () => rows.filter((r) => (!onlyMissing || r.cost == null) && (!q || `${r.product} ${r.variant} ${r.sku}`.toLowerCase().includes(q.toLowerCase()))),
+    () => rows.filter((r) => (!onlyMissing || r.cost == null || r.weight == null) && (!q || `${r.product} ${r.variant} ${r.sku}`.toLowerCase().includes(q.toLowerCase()))),
     [rows, onlyMissing, q],
   );
-  const setProduct = (product: string, cost: number | null) => setCosts((c) => ({ ...c, ...Object.fromEntries(rows.filter((r) => r.product === product).map((r) => [r.id, cost])) }));
+  const ofProduct = (product: string) => rows.filter((r) => r.product === product).map((r) => r.id);
+  const setProduct = (product: string, cost: number | null) => setCosts((c) => ({ ...c, ...Object.fromEntries(ofProduct(product).map((id) => [id, cost])) }));
+  const setProductWeight = (product: string, w: number | null) => setWeights((c) => ({ ...c, ...Object.fromEntries(ofProduct(product).map((id) => [id, w])) }));
 
   return (
-    <Card title="Product costs" action={<span className="text-xs text-ink-soft">What one unit costs you (materials or purchase price)</span>}>
+    <Card title="Product costs & weights" action={<span className="text-xs text-ink-soft">What one unit costs you, and what it weighs packed</span>}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <label className="relative min-w-52 flex-1">
           <span className="sr-only">Search</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-soft" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search products" className="field rounded-full py-2 pl-9 text-sm" />
         </label>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} className="h-4 w-4 accent-azulejo" /> Only without a cost ({rows.filter((r) => r.cost == null).length})</label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} className="h-4 w-4 accent-azulejo" /> Only missing cost or weight ({rows.filter((r) => r.cost == null || r.weight == null).length})</label>
       </div>
       <div className="-mx-2 max-h-[28rem] overflow-auto">
         <table className="w-full min-w-[620px] text-sm">
           <thead className="sticky top-0 bg-paper text-left text-xs text-ink-soft">
-            <tr><th className="px-2 pb-2 font-medium">Product</th><th className="px-2 pb-2 font-medium">Variant</th><th className="px-2 pb-2 text-right font-medium">Price</th><th className="px-2 pb-2 font-medium">Cost €</th><th className="px-2 pb-2 text-right font-medium">Margin</th></tr>
+            <tr><th className="px-2 pb-2 font-medium">Product</th><th className="px-2 pb-2 font-medium">Variant</th><th className="px-2 pb-2 text-right font-medium">Price</th><th className="px-2 pb-2 font-medium">Cost €</th><th className="px-2 pb-2 font-medium">Weight g</th><th className="px-2 pb-2 text-right font-medium">Margin</th></tr>
           </thead>
           <tbody className="divide-y divide-line">
             {shown.slice(0, 300).map((r, i) => {
@@ -90,6 +108,14 @@ export function ProductCosts({ rows }: { rows: CostRow[] }) {
                       )}
                     </div>
                   </td>
+                  <td className="px-2 py-2">
+                    <div className="flex items-center gap-1">
+                      <Grams key={`${r.id}-w-${weights[r.id]}`} label={`Weight of ${r.product} ${r.variant}`} value={weights[r.id]} onChange={(v) => setWeights((x) => ({ ...x, [r.id]: v }))} className={clsx("w-20", weights[r.id] == null && "border-coral/50")} />
+                      {first && rows.filter((x) => x.product === r.product).length > 1 && (
+                        <button type="button" onClick={() => setProductWeight(r.product, weights[r.id])} title="Use this weight for every variant of this product" className="rounded-full px-2 py-1 text-xs text-azulejo hover:bg-azulejo-tint">all</button>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-2 py-2 text-right tabular-nums text-ink-soft">{c != null && net ? `${Math.round(((net - c) / net) * 100)}%` : "—"}</td>
                 </tr>
               );
@@ -97,9 +123,9 @@ export function ProductCosts({ rows }: { rows: CostRow[] }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-ink-soft">Margin = price without VAT minus cost (before shipping and fees). “all” copies a cost to every variant of that product.</p>
+      <p className="mt-2 text-xs text-ink-soft">Margin = price without VAT minus cost (before shipping and fees). Weight = one unit ready to ship, in grams (e.g. a sardine 50). It picks the price bracket in your CTT/FedEx tables. “all” copies a value to every variant of that product.</p>
       <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
-        <button disabled={!changed.length || s.pending} onClick={() => s.run(() => saveVariantCosts(changed.map((r) => ({ id: r.id, cost: costs[r.id] }))), () => router.refresh())} className="btn-primary min-h-10 py-2 text-sm">Save {changed.length || ""} cost{changed.length === 1 ? "" : "s"}</button>
+        <button disabled={!changed.length || s.pending} onClick={() => s.run(() => saveVariantCosts(changed.map((r) => ({ id: r.id, cost: costs[r.id], weight: weights[r.id] }))), () => router.refresh())} className="btn-primary min-h-10 py-2 text-sm">Save {changed.length || ""} change{changed.length === 1 ? "" : "s"}</button>
         <s.Status />
       </div>
     </Card>
@@ -128,7 +154,7 @@ export function DefaultCosts({ initial, isOwner }: { initial: ProfitSettings; is
     <Card title="Default costs" action={<span className="text-xs text-ink-soft">Used when an order has no real cost entered</span>}>
       <div className="grid gap-6 md:grid-cols-3">
         <fieldset className="space-y-2">
-          <legend className="mb-2 text-sm font-semibold">Shipping (CTT) per order</legend>
+          <legend className="mb-2 text-sm font-semibold">Flat shipping (when weight is unknown)</legend>
           {money("Portugal", p.shipping.PT, (n) => setP({ ...p, shipping: { ...p.shipping, PT: n } }))}
           {money("Rest of EU", p.shipping.EU, (n) => setP({ ...p, shipping: { ...p.shipping, EU: n } }))}
           {money("Outside the EU", p.shipping.ROW, (n) => setP({ ...p, shipping: { ...p.shipping, ROW: n } }))}
@@ -148,13 +174,87 @@ export function DefaultCosts({ initial, isOwner }: { initial: ProfitSettings; is
           <p className="pt-2 text-xs text-ink-soft">Etsy rates shown are typical for a Portuguese shop. Check your Etsy payment account and adjust. Offsite Ads aren’t included; add them under expenses.</p>
         </fieldset>
       </div>
+      <RateTables p={p} setP={setP} disabled={!isOwner} />
       {isOwner && (
         <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
-          <button disabled={s.pending} onClick={() => s.run(() => saveSetting("profit", p), () => router.refresh())} className="btn-primary min-h-10 py-2 text-sm">Save defaults</button>
+          <button disabled={s.pending} onClick={() => s.run(() => saveSetting("profit", p), () => router.refresh())} className="btn-primary min-h-10 py-2 text-sm">Save shipping & defaults</button>
           <s.Status />
         </div>
       )}
     </Card>
+  );
+}
+
+const ZONES: [RateZone, string][] = [["PT", "Portugal"], ["EUROPE", "Europe"], ["US", "USA"], ["ROW", "Rest of the world"]];
+
+function RateTables({ p, setP, disabled }: { p: ProfitSettings; setP: (p: ProfitSettings) => void; disabled: boolean }) {
+  const [carrier, setCarrier] = useState<"ctt" | "fedex">("ctt");
+  const c = p.carriers[carrier];
+  const setRows = (z: RateZone, rows: RateRow[]) => setP({ ...p, carriers: { ...p.carriers, [carrier]: { ...c, zones: { ...c.zones, [z]: rows } } as CarrierRates } });
+  const setDuty = (i: number, d: Partial<DutyRule>) => setP({ ...p, duties: p.duties.map((x, j) => (j === i ? { ...x, ...d } : x)) });
+  return (
+    <div className="mt-6 border-t border-line pt-5">
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h3 className="text-sm font-semibold">Shipping price tables</h3>
+        <div className="flex gap-1 rounded-full bg-cream p-1 text-sm" role="tablist">
+          {(["ctt", "fedex"] as const).map((k) => (
+            <button key={k} type="button" role="tab" aria-selected={carrier === k} onClick={() => setCarrier(k)} className={clsx("rounded-full px-3 py-1", carrier === k ? "bg-ink text-cream" : "text-ink-soft")}>{p.carriers[k].name}</button>
+          ))}
+        </div>
+        <span className="text-xs text-ink-soft">Weight up to (g) → price you pay (€). Empty table = flat amount above.</span>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {ZONES.map(([z, label]) => {
+          const rows = c.zones[z] ?? [];
+          return (
+            <fieldset key={`${carrier}-${z}`} className="rounded-2xl bg-cream p-3">
+              <legend className="sr-only">{c.name} {label}</legend>
+              <p className="mb-2 text-sm font-medium">{label}</p>
+              <div className="mb-1 grid grid-cols-[1fr_1fr_auto] gap-2 text-xs text-ink-soft"><span>Up to g</span><span>Price €</span><span className="w-7" /></div>
+              <div className="space-y-1.5">
+                {rows.map((r, i) => (
+                  <div key={`${i}-${r.upTo}-${r.price}`} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+                    <Grams label={`${label} weight ${i + 1}`} value={r.upTo} onChange={(g) => setRows(z, rows.map((x, j) => (j === i ? { ...x, upTo: g ?? 0 } : x)).sort((a, b) => a.upTo - b.upTo))} className="w-full text-right" />
+                    <Money label={`${label} price ${i + 1}`} value={r.price} onChange={(v) => setRows(z, rows.map((x, j) => (j === i ? { ...x, price: v ?? 0 } : x)))} className="w-full text-right" />
+                    <button type="button" disabled={disabled} onClick={() => setRows(z, rows.filter((_, j) => j !== i))} aria-label={`Remove ${label} row ${i + 1}`} className="grid h-7 w-7 place-items-center rounded-full text-coral-ink hover:bg-coral-tint"><Trash2 className="h-3.5 w-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+              <button type="button" disabled={disabled} onClick={() => setRows(z, [...rows, { upTo: (rows[rows.length - 1]?.upTo ?? 0) * 2 || 100, price: rows[rows.length - 1]?.price ?? 0 }])} className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-azulejo hover:bg-azulejo-tint"><Plus className="h-3.5 w-3.5" /> Add weight</button>
+            </fieldset>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs text-ink-soft">Parcels heavier than the last row are counted as several parcels. Europe = EU plus UK, Switzerland, Norway and the rest of Europe.</p>
+
+      <div className="mt-5 grid gap-6 md:grid-cols-2">
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-sm font-semibold">Parcel</legend>
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span>Box & filling weight added to every order</span>
+            <span className="flex items-center gap-1"><Grams label="Packaging weight" value={p.packagingWeight} onChange={(g) => setP({ ...p, packagingWeight: g ?? 0 })} className="w-20 text-right" />g</span>
+          </label>
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span>Use FedEx for orders heavier than (empty = always CTT)</span>
+            <span className="flex items-center gap-1"><Grams label="FedEx above" value={p.bulkAboveGrams} onChange={(g) => setP({ ...p, bulkAboveGrams: g })} className="w-20 text-right" />g</span>
+          </label>
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="mb-2 text-sm font-semibold">Import duties you pay up front</legend>
+          {p.duties.map((d, i) => (
+            <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
+              <input aria-label="Country code" value={d.country} maxLength={2} disabled={disabled} onChange={(e) => setDuty(i, { country: e.target.value.toUpperCase() })} className="field w-14 py-1.5 text-center text-sm uppercase" />
+              <input aria-label="Description" value={d.label} disabled={disabled} onChange={(e) => setDuty(i, { label: e.target.value })} className="field min-w-32 flex-1 py-1.5 text-sm" />
+              <span className="flex items-center gap-1"><input aria-label="Duty %" type="number" step="0.1" min={0} max={100} value={d.pct} disabled={disabled} onChange={(e) => setDuty(i, { pct: Number(e.target.value) })} className="field w-16 py-1.5 text-right text-sm tabular-nums" />%</span>
+              <span className="flex items-center gap-1">+ €<Money label="Fixed fee per order" value={d.fixed} onChange={(c) => setDuty(i, { fixed: c ?? 0 })} className="w-16 text-right" /></span>
+              <button type="button" disabled={disabled} onClick={() => setP({ ...p, duties: p.duties.filter((_, j) => j !== i) })} aria-label="Remove duty rule" className="grid h-7 w-7 place-items-center rounded-full text-coral-ink hover:bg-coral-tint"><Trash2 className="h-3.5 w-3.5" /></button>
+            </div>
+          ))}
+          <button type="button" disabled={disabled} onClick={() => setP({ ...p, duties: [...p.duties, { country: "", pct: 0, fixed: 0, label: "Import duties" }] })} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-azulejo hover:bg-azulejo-tint"><Plus className="h-3.5 w-3.5" /> Add country</button>
+          <p className="text-xs text-ink-soft">% of the products’ value (after discounts, without shipping), for every order shipped to that country. Real amounts can be typed on each order.</p>
+        </fieldset>
+      </div>
+    </div>
   );
 }
 
@@ -205,11 +305,12 @@ export function Expenses({ rows, defaultDate }: { rows: ExpenseRow[]; defaultDat
 
 /* ------------------------------------------------------------------ Order costs (order page) */
 
-export function OrderCosts({ orderId, real, estimate, profit }: { orderId: string; real: { shipping: number | null; packaging: number | null; fees: number | null }; estimate: { shipping: number; packaging: number; fees: number }; profit: { revenue: number; cogs: number; profit: number; missingCost: number } }) {
+export function OrderCosts({ orderId, real, estimate, profit, ship }: { orderId: string; real: { shipping: number | null; packaging: number | null; fees: number | null; duties: number | null }; estimate: { shipping: number; packaging: number; fees: number; duties: number }; profit: { revenue: number; cogs: number; profit: number; missingCost: number }; ship: OrderProfit["ship"] }) {
   const router = useRouter();
   const [c, setC] = useState(real);
   const s = useSave();
-  const row = (k: "shipping" | "packaging" | "fees", label: string) => (
+  const other = (c.shipping ?? estimate.shipping) + (c.packaging ?? estimate.packaging) + (c.fees ?? estimate.fees) + (c.duties ?? estimate.duties);
+  const row = (k: "shipping" | "packaging" | "fees" | "duties", label: string) => (
     <label className="flex items-center justify-between gap-3 text-sm">
       <span>{label}</span>
       <Money label={label} value={c[k]} placeholder={(estimate[k] / 100).toFixed(2)} onChange={(v) => setC({ ...c, [k]: v })} className="w-24 text-right" />
@@ -217,15 +318,19 @@ export function OrderCosts({ orderId, real, estimate, profit }: { orderId: strin
   );
   return (
     <div className="space-y-2">
-      {row("shipping", "Shipping label (CTT)")}
+      {row("shipping", "Shipping label")}
+      <p className="-mt-1 text-xs text-ink-soft">
+        {ship.basis === "table" && ship.grams != null ? `Estimate: ${ship.grams} g → ${ship.carrier} up to ${ship.bracket} g${ship.grams > (ship.bracket ?? 0) ? " (several parcels)" : ""}` : ship.missingWeight ? `Estimate is the flat amount: ${ship.missingWeight} item${ship.missingWeight === 1 ? " has" : "s have"} no weight yet` : ship.basis === "flat" ? "Estimate is the flat amount: no price table for this destination" : null}
+      </p>
       {row("packaging", "Packaging")}
       {row("fees", "Fees (Etsy / payment)")}
+      {(estimate.duties > 0 || c.duties != null) && row("duties", "Import duties (Zonos)")}
       <p className="text-xs text-ink-soft">Grey values are estimates from your defaults. Type the real amount to replace them.</p>
       <dl className="mt-3 space-y-1 border-t border-line pt-3 text-sm">
         <div className="flex justify-between"><dt className="text-ink-soft">Revenue (excl. VAT & Etsy tax)</dt><dd className="tabular-nums">{eur(profit.revenue, 2)}</dd></div>
         <div className="flex justify-between"><dt className="text-ink-soft">Product cost</dt><dd className="tabular-nums">{profit.missingCost ? <span className="text-coral-ink">not set</span> : `−${eur(profit.cogs, 2)}`}</dd></div>
-        <div className="flex justify-between"><dt className="text-ink-soft">Shipping, packaging & fees</dt><dd className="tabular-nums">−{eur((c.shipping ?? estimate.shipping) + (c.packaging ?? estimate.packaging) + (c.fees ?? estimate.fees), 2)}</dd></div>
-        <div className="flex justify-between pt-1 font-semibold"><dt>Profit</dt><dd className={clsx("tabular-nums", profit.profit < 0 && "text-coral-ink")}>{eur(profit.revenue - profit.cogs - ((c.shipping ?? estimate.shipping) + (c.packaging ?? estimate.packaging) + (c.fees ?? estimate.fees)), 2)}</dd></div>
+        <div className="flex justify-between"><dt className="text-ink-soft">Shipping, packaging, fees & duties</dt><dd className="tabular-nums">−{eur(other, 2)}</dd></div>
+        <div className="flex justify-between pt-1 font-semibold"><dt>Profit</dt><dd className={clsx("tabular-nums", profit.revenue - profit.cogs - other < 0 && "text-coral-ink")}>{eur(profit.revenue - profit.cogs - other, 2)}</dd></div>
       </dl>
       <div className="flex items-center gap-3 pt-2">
         <button disabled={s.pending} onClick={() => s.run(() => saveOrderCosts(orderId, c), () => router.refresh())} className="btn-outline min-h-9 py-1.5 text-sm">Save costs</button>

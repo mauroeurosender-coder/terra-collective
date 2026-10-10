@@ -23,7 +23,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const sb = await supabaseServer();
   const [{ data: o }, { data: events }] = await Promise.all([
-    sb.from("orders").select("*, customers(id, tags), order_items(*, products(slug, product_media(url, position)), variants(image_index, cost))").eq("id", id).maybeSingle(),
+    sb.from("orders").select("*, customers(id, tags), order_items(*, products(slug, product_media(url, position)), variants(image_index, cost, weight_g))").eq("id", id).maybeSingle(),
     sb.from("order_events").select("*").eq("order_id", id).order("created_at", { ascending: false }),
   ]);
   if (!o) notFound();
@@ -31,7 +31,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const profitDefaults = mergeSettings(settingRows ?? []).profit;
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const pr = orderProfit(o as any, profitDefaults);
-  const est = orderProfit({ ...(o as any), shipping_cost: null, packaging_cost: null, fees_cost: null }, profitDefaults);
+  const est = orderProfit({ ...(o as any), shipping_cost: null, packaging_cost: null, fees_cost: null, duties_cost: null }, profitDefaults);
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   const a = o.shipping_address ?? {};
@@ -163,8 +163,9 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <Card title="Costs & profit">
               <OrderCosts
                 orderId={o.id}
-                real={{ shipping: o.shipping_cost, packaging: o.packaging_cost, fees: o.fees_cost }}
-                estimate={{ shipping: est.shipping, packaging: est.packaging, fees: est.fees }}
+                real={{ shipping: o.shipping_cost, packaging: o.packaging_cost, fees: o.fees_cost, duties: o.duties_cost }}
+                estimate={{ shipping: est.shipping, packaging: est.packaging, fees: est.fees, duties: est.duties }}
+                ship={est.ship}
                 profit={{ revenue: pr.revenue, cogs: pr.cogs, profit: pr.profit, missingCost: pr.missingCost }}
               />
             </Card>
