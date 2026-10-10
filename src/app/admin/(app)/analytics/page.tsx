@@ -1,7 +1,8 @@
 import Link from "next/link";
 import clsx from "clsx";
 import { requireAdmin } from "@/lib/admin/auth";
-import { supabaseConfigured } from "@/lib/supabase/server";
+import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
+import { getEtsyTraffic } from "@/lib/server/ga4";
 import { isoDate, parseRange } from "@/lib/admin/range";
 import { getAnalytics, type ProductStat } from "@/lib/admin/analytics";
 import { RangePicker } from "@/components/admin/range-picker";
@@ -44,7 +45,14 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
       </div>
     );
   }
-  const a = await getAnalytics(range);
+  const [a, etsy, { data: etsyProducts }] = await Promise.all([
+    getAnalytics(range),
+    getEtsyTraffic(isoDate(range.from), isoDate(new Date(range.to.getTime() - 86_400_000))),
+    (await supabaseServer()).from("products").select("etsy_listing_id, name").not("etsy_listing_id", "is", null),
+  ]);
+  const etsyVisits = new Map(etsy.ok ? etsy.data.countries.map((c) => [c.country, c.sessions]) : []);
+  const etsyOrders = a.countries.reduce((n, c) => n + c.etsyOrders, 0);
+  const listingName = new Map((etsyProducts ?? []).map((p: { etsy_listing_id: string; name: { en: string } }) => [String(p.etsy_listing_id), p.name.en]));
   const sort = (cols.find((c) => c.key === sp.sort)?.key ?? "revenue") as keyof ProductStat;
   const products = [...a.products].sort((x, y) => (y[sort] as number) - (x[sort] as number));
   const top = a.funnel[0].count || 1;
@@ -82,12 +90,44 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         </Card>
       </div>
 
+      <Card title="Etsy shop traffic" action={<span className="text-xs text-ink-soft">From Google Analytics (Etsy → Web Analytics)</span>}>
+        {etsy.ok ? (
+          <div className="space-y-5">
+            <dl className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {[
+                ["Visits", etsy.data.sessions.toLocaleString("en-IE")],
+                ["Page views", etsy.data.views.toLocaleString("en-IE")],
+                ["Etsy orders", String(etsyOrders)],
+                ["Etsy conversion", etsy.data.sessions ? `${((etsyOrders / etsy.data.sessions) * 100).toFixed(2)}%` : "—"],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-2xl bg-cream px-4 py-3"><dt className="text-xs text-ink-soft">{k}</dt><dd className="mt-1 text-xl font-semibold tabular-nums">{v}</dd></div>
+              ))}
+            </dl>
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold">Where Etsy visitors come from</h3>
+                {etsy.data.sources.length ? <BarList rows={etsy.data.sources.slice(0, 8).map((x) => ({ key: x.source, label: x.source, value: x.sessions }))} format={(v) => v.toLocaleString("en-IE")} /> : <p className="text-sm text-ink-soft">No visits in this period.</p>}
+              </div>
+              <div>
+                <h3 className="mb-2 text-sm font-semibold">Most viewed listings</h3>
+                {etsy.data.listings.length ? <BarList rows={etsy.data.listings.slice(0, 8).map((x) => ({ key: x.listingId, label: listingName.get(x.listingId) ?? `Listing ${x.listingId}`, value: x.views }))} format={(v) => v.toLocaleString("en-IE")} /> : <p className="text-sm text-ink-soft">No listing views in this period.</p>}
+              </div>
+            </div>
+            <p className="text-xs text-ink-soft">Etsy only sends some visits to Google Analytics (mainly desktop browsers, not the Etsy app), so real visits are higher and real conversion lower than shown.</p>
+          </div>
+        ) : etsy.error === "not_configured" ? (
+          <p className="text-sm text-ink-soft">Not connected yet. Once Google Analytics access is set up (GA4_PROPERTY_ID and GA4_CREDENTIALS in Hostinger), Etsy visits, sources and most viewed listings appear here.</p>
+        ) : (
+          <p className="rounded-xl bg-coral-tint px-3 py-2 text-sm text-coral-ink">Couldn’t read Google Analytics: {etsy.error}</p>
+        )}
+      </Card>
+
       <Card title="Countries" action={<span className="text-xs text-ink-soft">Website conversion = website orders ÷ website visits</span>}>
         {a.countries.length ? (
           <div className="-mx-2 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+            <table className="w-full min-w-[860px] text-sm">
               <thead className="text-left text-xs text-ink-soft">
-                <tr><th className="px-2 pb-2 font-medium">Country</th><th className="w-1/4 px-2 pb-2 font-medium">Website visits</th><th className="px-2 pb-2 text-right font-medium">Website orders</th><th className="px-2 pb-2 text-right font-medium">Conversion</th><th className="px-2 pb-2 text-right font-medium">Etsy orders</th><th className="px-2 pb-2 text-right font-medium">Revenue (all)</th></tr>
+                <tr><th className="px-2 pb-2 font-medium">Country</th><th className="w-1/4 px-2 pb-2 font-medium">Website visits</th><th className="px-2 pb-2 text-right font-medium">Website orders</th><th className="px-2 pb-2 text-right font-medium">Conversion</th>{etsy.ok && <th className="px-2 pb-2 text-right font-medium">Etsy visits</th>}<th className="px-2 pb-2 text-right font-medium">Etsy orders</th>{etsy.ok && <th className="px-2 pb-2 text-right font-medium">Etsy conv.</th>}<th className="px-2 pb-2 text-right font-medium">Revenue (all)</th></tr>
               </thead>
               <tbody className="divide-y divide-line tabular-nums">
                 {a.countries.slice(0, 12).map((c) => (
@@ -101,7 +141,9 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                     </td>
                     <td className="px-2 py-2.5 text-right">{c.orders}</td>
                     <td className="px-2 py-2.5 text-right">{c.sessions ? `${((c.orders / c.sessions) * 100).toFixed(1)}%` : "—"}</td>
+                    {etsy.ok && <td className="px-2 py-2.5 text-right">{(etsyVisits.get(c.country) ?? 0).toLocaleString("en-IE")}</td>}
                     <td className="px-2 py-2.5 text-right">{c.etsyOrders}</td>
+                    {etsy.ok && <td className="px-2 py-2.5 text-right">{etsyVisits.get(c.country) ? `${((c.etsyOrders / etsyVisits.get(c.country)!) * 100).toFixed(1)}%` : "—"}</td>}
                     <td className="px-2 py-2.5 text-right">{eur(c.revenue + c.etsyRevenue)}</td>
                   </tr>
                 ))}
