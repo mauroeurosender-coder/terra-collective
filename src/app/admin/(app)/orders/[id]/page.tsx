@@ -23,7 +23,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
   const sb = await supabaseServer();
   const [{ data: o }, { data: events }] = await Promise.all([
-    sb.from("orders").select("*, customers(id, tags), order_items(*, products(slug, product_media(url, position)), variants(image_index, cost, weight_g))").eq("id", id).maybeSingle(),
+    sb.from("orders").select("*, customers(id, tags), order_items(*, products(slug, product_media(url, position), variants(cost, weight_g)), variants(image_index, cost, weight_g))").eq("id", id).maybeSingle(),
     sb.from("order_events").select("*").eq("order_id", id).order("created_at", { ascending: false }),
   ]);
   if (!o) notFound();

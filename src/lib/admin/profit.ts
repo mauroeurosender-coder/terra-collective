@@ -26,8 +26,36 @@ export type OrderRow = {
   packaging_cost: number | null;
   fees_cost: number | null;
   duties_cost?: number | null;
-  order_items: { quantity: number; unit_price: number; variant_id: string | null; name: string; variants: { cost: number | null; weight_g?: number | null } | null; products: { slug: string; name: { en: string } } | null }[];
+  order_items: {
+    quantity: number;
+    unit_price: number;
+    variant_id: string | null;
+    name: string;
+    variant_label?: string | null;
+    variants: { cost: number | null; weight_g?: number | null } | null;
+    products: { slug: string; name: { en: string }; variants?: { cost: number | null; weight_g: number | null }[] } | null;
+  }[];
 };
+
+/** "Set of 3", "Pack of 5", "3 pcs", "Conjunto de 3" → 3; otherwise 1. */
+export function setSize(label: string | null | undefined) {
+  const m = (label ?? "").match(/(?:set|pack|lot|box|bundle|conjunto) (?:of|de) (\d+)|\b(\d+)\s*(?:x|pcs|pieces|units|sardines|sardinhas)\b/i);
+  const n = Number(m?.[1] ?? m?.[2] ?? 1);
+  return n >= 1 && n <= 50 ? n : 1;
+}
+
+/**
+ * Cost and weight of one unit of an order line. Lines linked to a variant use it; lines that aren’t
+ * (e.g. an Etsy "Set of 3" option the website doesn’t have) use the product’s per-piece values × the set size.
+ */
+export function lineUnit(i: OrderRow["order_items"][number]): { cost: number | null; weight: number | null } {
+  if (i.variants) return { cost: i.variants.cost, weight: i.variants.weight_g ?? null };
+  const vs = i.products?.variants ?? [];
+  const k = setSize(i.variant_label);
+  const cost = vs.find((v) => v.cost != null)?.cost;
+  const weight = vs.find((v) => v.weight_g != null)?.weight_g;
+  return { cost: cost == null ? null : cost * k, weight: weight == null ? null : weight * k };
+}
 
 export type OrderProfit = {
   revenue: number; // net of VAT owed and marketplace-collected tax
@@ -72,7 +100,7 @@ export function orderProfit(o: OrderRow, p: ProfitSettings): OrderProfit {
   let missingCost = 0;
   if (!fullyRefunded) {
     for (const i of o.order_items) {
-      const c = i.variants?.cost;
+      const c = lineUnit(i).cost;
       if (c == null) missingCost += i.quantity;
       else cogs += c * i.quantity;
     }
@@ -83,7 +111,7 @@ export function orderProfit(o: OrderRow, p: ProfitSettings): OrderProfit {
   let missingWeight = 0;
   let grams = p.packagingWeight ?? 0;
   for (const i of o.order_items) {
-    const w = i.variants?.weight_g;
+    const w = lineUnit(i).weight;
     if (w == null) missingWeight += i.quantity;
     else grams += w * i.quantity;
   }
@@ -143,7 +171,7 @@ export type ProfitReport = {
 };
 
 const SELECT =
-  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, order_items(quantity, unit_price, variant_id, name, variants(cost, weight_g), products(slug, name))";
+  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g), products(slug, name, variants(cost, weight_g)))";
 
 export async function loadProfitOrders(sb: SupabaseClient, from: Date, to: Date) {
   const rows: OrderRow[] = [];
@@ -221,12 +249,13 @@ export async function getProfitReport(sb: SupabaseClient, range: Range): Promise
       const share = (i.unit_price * i.quantity) / itemsValue;
       const key = i.products?.slug ?? i.name;
       const x = prod.get(key) ?? { slug: i.products?.slug ?? "", name: i.products?.name.en ?? i.name, units: 0, revenue: 0, cogs: 0, profit: 0, missingCost: false };
-      const itemCogs = i.variants?.cost != null ? i.variants.cost * i.quantity : 0;
+      const unitCost = lineUnit(i).cost;
+      const itemCogs = unitCost != null ? unitCost * i.quantity : 0;
       x.units += i.quantity;
       x.revenue += Math.round(r.revenue * share);
       x.cogs += itemCogs;
       x.profit += Math.round(r.revenue * share - itemCogs - orderLevel * share);
-      if (i.variants?.cost == null) x.missingCost = true;
+      if (unitCost == null) x.missingCost = true;
       prod.set(key, x);
     }
   }
