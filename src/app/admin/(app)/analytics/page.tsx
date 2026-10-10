@@ -69,25 +69,25 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
               return (
                 <li key={f.step} className="grid grid-cols-[minmax(0,9.5rem)_1fr_auto] items-center gap-3 text-sm">
                   <span>{f.step}</span>
-                  <span className="relative h-7 rounded-r-[4px]"><span className="absolute inset-y-0 left-0 rounded-r-[4px] bg-azulejo" style={{ width: `${Math.max(1.5, (f.count / top) * 100)}%`, opacity: 1 - i * 0.12 }} /></span>
+                  <span className="relative h-7 rounded-r-[4px]"><span className="absolute inset-y-0 left-0 rounded-r-[4px] bg-azulejo" style={{ width: `${Math.min(100, Math.max(1.5, (f.count / top) * 100))}%`, opacity: 1 - i * 0.12 }} /></span>
                   <span className="w-28 text-right tabular-nums">{f.count.toLocaleString("en-IE")}{i > 0 && <span className="ml-1.5 text-xs text-ink-soft">{prev ? `${((f.count / prev) * 100).toFixed(0)}%` : "—"}</span>}</span>
                 </li>
               );
             })}
           </ol>
-          <p className="mt-4 text-xs text-ink-soft">Percentages are the share of the previous step. Overall conversion: {((a.funnel[4].count / top) * 100).toFixed(2)}%.</p>
+          <p className="mt-4 text-xs text-ink-soft">Website only. Percentages are the share of the previous step. Overall conversion: {a.funnel[0].count ? `${((a.funnel[4].count / top) * 100).toFixed(2)}%` : "—"}. Etsy doesn’t share visits, so Etsy orders aren’t in the funnel.</p>
         </Card>
         <Card title="Traffic sources">
           {a.sources.length ? <BarList rows={a.sources.slice(0, 8).map((s) => ({ key: s.source, label: s.source, value: s.sessions }))} format={(v) => v.toLocaleString("en-IE")} /> : <p className="text-sm text-ink-soft">No visits yet. Add <code>?utm_source=instagram</code> to links you share to see them here.</p>}
         </Card>
       </div>
 
-      <Card title="Visits by country" action={<span className="text-xs text-ink-soft">Conversion = orders ÷ visits</span>}>
+      <Card title="Countries" action={<span className="text-xs text-ink-soft">Website conversion = website orders ÷ website visits</span>}>
         {a.countries.length ? (
           <div className="-mx-2 overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead className="text-left text-xs text-ink-soft">
-                <tr><th className="px-2 pb-2 font-medium">Country</th><th className="w-2/5 px-2 pb-2 font-medium">Visits</th><th className="px-2 pb-2 text-right font-medium">Orders</th><th className="px-2 pb-2 text-right font-medium">Revenue</th><th className="px-2 pb-2 text-right font-medium">Conversion</th></tr>
+                <tr><th className="px-2 pb-2 font-medium">Country</th><th className="w-1/4 px-2 pb-2 font-medium">Website visits</th><th className="px-2 pb-2 text-right font-medium">Website orders</th><th className="px-2 pb-2 text-right font-medium">Conversion</th><th className="px-2 pb-2 text-right font-medium">Etsy orders</th><th className="px-2 pb-2 text-right font-medium">Revenue (all)</th></tr>
               </thead>
               <tbody className="divide-y divide-line tabular-nums">
                 {a.countries.slice(0, 12).map((c) => (
@@ -95,13 +95,14 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                     <td className="px-2 py-2.5 font-medium">{countryName(c.country)}</td>
                     <td className="px-2 py-2.5">
                       <span className="flex items-center gap-2">
-                        <span className="h-5 rounded-r-[4px] bg-azulejo" style={{ width: `${Math.max(2, (c.sessions / Math.max(1, a.countries[0].sessions)) * 100)}%` }} />
+                        <span className="h-5 rounded-r-[4px] bg-azulejo" style={{ width: `${c.sessions ? Math.max(2, (c.sessions / Math.max(1, ...a.countries.map((x) => x.sessions))) * 100) : 0}%` }} />
                         <span>{c.sessions.toLocaleString("en-IE")}</span>
                       </span>
                     </td>
                     <td className="px-2 py-2.5 text-right">{c.orders}</td>
-                    <td className="px-2 py-2.5 text-right">{eur(c.revenue)}</td>
                     <td className="px-2 py-2.5 text-right">{c.sessions ? `${((c.orders / c.sessions) * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="px-2 py-2.5 text-right">{c.etsyOrders}</td>
+                    <td className="px-2 py-2.5 text-right">{eur(c.revenue + c.etsyRevenue)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -110,7 +111,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         ) : <p className="text-sm text-ink-soft">No visits yet.</p>}
       </Card>
 
-      <Card title="Products" action={<span className="text-xs text-ink-soft">Conversion = units sold ÷ product views</span>}>
+      <Card title="Products" action={<span className="text-xs text-ink-soft">Units & revenue: all channels · Conversion = website units ÷ website views</span>}>
         <div className="-mx-2 overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead className="text-left text-xs text-ink-soft">

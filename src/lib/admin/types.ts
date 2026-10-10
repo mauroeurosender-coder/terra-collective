@@ -17,6 +17,8 @@ export type AdminOrder = {
   test?: boolean;
   /** Tax collected and remitted by a marketplace (e.g. Etsy GST) — not shop revenue. */
   marketplaceTax?: number;
+  /** web | etsy | manual */
+  source?: string;
   items: AdminOrderItem[];
 };
 

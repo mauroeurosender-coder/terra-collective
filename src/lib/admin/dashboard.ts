@@ -39,6 +39,7 @@ async function loadLive(range: Range) {
     giftMessage: o.gift_message,
     test: o.test,
     marketplaceTax: o.source === "etsy" ? (o.vat ?? 0) : 0,
+    source: o.source,
     items: o.order_items.map((i) => ({ slug: i.products?.slug ?? "", name: i.name, variantLabel: i.variant_label ?? "", unitPrice: i.unit_price, quantity: i.quantity })),
   }));
 
@@ -80,7 +81,8 @@ function kpis(orders: AdminOrder[], visits: number): Kpis {
     orders: counted.length,
     aov: counted.length ? Math.round(revenue / counted.length) : 0,
     visits,
-    conversion: visits ? counted.length / visits : 0,
+    // Only the website measures visits, so conversion compares website orders with website visits.
+    conversion: visits ? counted.filter((o) => o.source !== "etsy").length / visits : 0,
   };
 }
 

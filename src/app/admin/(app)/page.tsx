@@ -36,8 +36,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <Kpi label="Revenue" value={eur(d.kpis.revenue)} current={d.kpis.revenue} previous={d.prev.revenue} periodLabel={period} />
         <Kpi label="Orders" value={String(d.kpis.orders)} current={d.kpis.orders} previous={d.prev.orders} periodLabel={period} />
         <Kpi label="Average order" value={eur(d.kpis.aov, 2)} current={d.kpis.aov} previous={d.prev.aov} periodLabel={period} />
-        <Kpi label="Conversion" value={`${(d.kpis.conversion * 100).toFixed(2)}%`} current={d.kpis.conversion} previous={d.prev.conversion} periodLabel={period} format="percent-points" />
-        <Kpi label="Visits" value={d.kpis.visits.toLocaleString("en-IE")} current={d.kpis.visits} previous={d.prev.visits} periodLabel={period} className="col-span-2 xl:col-span-1" />
+        <Kpi label="Website conversion" value={`${(d.kpis.conversion * 100).toFixed(2)}%`} current={d.kpis.conversion} previous={d.prev.conversion} periodLabel={period} format="percent-points" />
+        <Kpi label="Website visits" value={d.kpis.visits.toLocaleString("en-IE")} current={d.kpis.visits} previous={d.prev.visits} periodLabel={period} className="col-span-2 xl:col-span-1" />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.7fr_1fr]">
