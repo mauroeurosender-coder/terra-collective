@@ -30,6 +30,8 @@ export type Variant = {
   compareAt?: number;
   stock: number;
   image?: number; // index into product.images
+  /** Packed weight in grams (for shipping by weight). */
+  weight?: number;
 };
 
 export type Product = {

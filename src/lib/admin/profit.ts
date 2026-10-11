@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { mergeSettings, type ProfitSettings, type RateRow, type RateZone } from "../settings";
+import { mergeSettings, type ProfitSettings, type RateZone } from "../settings";
+import { rateFor } from "../shipping-rates";
 import type { Range } from "./types";
 
 // Countries CTT prices as "Europe" (EU + the rest of geographic Europe).
@@ -74,17 +75,7 @@ export type OrderProfit = {
 
 export const rateZone = (country: string): RateZone => (country === "PT" ? "PT" : country === "US" ? "US" : EU.has(country) || EUROPE_EXTRA.has(country) ? "EUROPE" : "ROW");
 
-/** Price for a parcel of `grams` from a weight table; heavier than the last bracket = split into several parcels. */
-export function rateFor(rows: RateRow[], grams: number): { price: number; bracket: number } | null {
-  const r = rows.filter((x) => x.upTo > 0).sort((a, b) => a.upTo - b.upTo);
-  if (!r.length) return null;
-  const hit = r.find((x) => grams <= x.upTo);
-  if (hit) return { price: hit.price, bracket: hit.upTo };
-  const max = r[r.length - 1];
-  const full = Math.ceil(grams / max.upTo) - 1;
-  const rest = grams - full * max.upTo;
-  return { price: full * max.price + (r.find((x) => rest <= x.upTo) ?? max).price, bracket: max.upTo };
-}
+export { rateFor };
 
 /** Profit for one order with the given default costs. All money in cents. */
 export function orderProfit(o: OrderRow, p: ProfitSettings): OrderProfit {

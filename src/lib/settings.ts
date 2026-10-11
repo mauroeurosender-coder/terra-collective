@@ -3,7 +3,7 @@
  * Defaults mirror the original hard-coded values; saved values override them.
  */
 import { store } from "./config";
-import { countries, zones, type ZoneId } from "./geo";
+import { countries, zones, type ZoneId, setPackagingWeight } from "./geo";
 import type { L } from "./types";
 import { defaultThemeSettings, type ThemeSettings } from "./themes";
 import { defaultHomeLayout, type HomeDesigns, type HomeSection } from "./home-layout";
@@ -11,8 +11,8 @@ import { defaultHomeLayout, type HomeDesigns, type HomeSection } from "./home-la
 /** Default costs used when an order has no real value entered. Money in cents, rates in %. */
 /** Carrier price zones (not the same as the shop’s own shipping zones). */
 export type RateZone = "PT" | "EUROPE" | "US" | "ROW";
-/** One weight bracket: parcels up to `upTo` grams cost `price` cents. */
-export type RateRow = { upTo: number; price: number };
+import type { RateRow } from "./shipping-rates";
+export type { RateRow };
 export type CarrierRates = { name: string; zones: Record<RateZone, RateRow[]> };
 /** Import duties you pay up front (e.g. US through Zonos): pct of the goods value + fixed fee per order. */
 export type DutyRule = { country: string; pct: number; fixed: number; label: string };
@@ -58,7 +58,8 @@ export const defaultProfitSettings = (): ProfitSettings => ({
 
 export type PaymentKey = "card" | "mbway" | "multibanco" | "paypal" | "klarna" | "applepay" | "googlepay";
 
-export type ZoneSettings = { days: [number, number]; carrier: string; rates: { small: number; standard: number; statement: number; textile: number }; freeOver: number | null };
+/** rates = price by size category (fallback); weightRates = what customers pay by parcel weight (used when every product in the cart has a weight). */
+export type ZoneSettings = { days: [number, number]; carrier: string; rates: { small: number; standard: number; statement: number; textile: number }; weightRates: RateRow[]; freeOver: number | null };
 
 export type Settings = {
   announcement: L;
@@ -88,7 +89,7 @@ export const defaultSettings = (): Settings => ({
     image: "/lifestyle/hero.svg",
   },
   shipping: Object.fromEntries(
-    Object.values(zones).map((z) => [z.id, { days: [...z.days] as [number, number], carrier: z.carrier, rates: { ...z.rates }, freeOver: z.freeOver ?? null }]),
+    Object.values(zones).map((z) => [z.id, { days: [...z.days] as [number, number], carrier: z.carrier, rates: { ...z.rates }, weightRates: (z.weightRates ?? []).map((r) => ({ ...r })), freeOver: z.freeOver ?? null }]),
   ) as Record<ZoneId, ZoneSettings>,
   vat: Object.fromEntries(countries.map((c) => [c.code, c.vat])),
   payments: { card: true, mbway: true, multibanco: true, paypal: true, klarna: true, applepay: true, googlepay: true },
@@ -110,6 +111,11 @@ export function mergeSettings(rows: { key: string; value: unknown }[]): Settings
   for (const { key, value } of rows) {
     if (!(key in s) || value == null || typeof value !== "object") continue;
     const base = s[key] as Record<string, unknown>;
+    if (key === "shipping") {
+      // Merge per zone so fields added later (e.g. weightRates) get their defaults.
+      s[key] = Object.fromEntries(Object.entries(base).map(([z, d]) => [z, { ...(d as object), ...((value as Record<string, object>)[z] ?? {}) }]));
+      continue;
+    }
     s[key] = Array.isArray(value) ? value : { ...base, ...(value as Record<string, unknown>) };
   }
   return s as Settings;
@@ -120,13 +126,15 @@ export function mergeSettings(rows: { key: string; value: unknown }[]): Settings
  * Runs on the server (per catalogue load) and in the browser (Providers),
  * so cart, checkout and server totals always agree.
  */
-export function applySettings(s: Pick<Settings, "shipping" | "vat" | "payments">) {
+export function applySettings(s: Pick<Settings, "shipping" | "vat" | "payments"> & { packagingWeight?: number }) {
+  setPackagingWeight(s.packagingWeight ?? 0);
   for (const [id, z] of Object.entries(s.shipping) as [ZoneId, ZoneSettings][]) {
     const zone = zones[id];
     if (!zone) continue;
     zone.days = z.days;
     zone.carrier = z.carrier;
     zone.rates = { ...z.rates };
+    zone.weightRates = (z.weightRates ?? []).map((r) => ({ ...r }));
     zone.freeOver = z.freeOver ?? undefined;
   }
   for (const c of countries) if (typeof s.vat[c.code] === "number") c.vat = s.vat[c.code];

@@ -10,6 +10,7 @@ import { localizePrice } from "@/lib/geo";
 import type { ProductLite } from "@/lib/data/catalog";
 import { useCart, useWishlist } from "@/lib/store/cart";
 import { applySettings, type Settings } from "@/lib/settings";
+import { setVariantWeights } from "@/lib/geo";
 
 type Prefs = {
   locale: Locale;
@@ -17,7 +18,7 @@ type Prefs = {
   currency: Currency;
   country: string;
   catalog: ProductLite[];
-  settings: Pick<Settings, "shipping" | "vat" | "payments" | "announcement" | "store">;
+  settings: Pick<Settings, "shipping" | "vat" | "payments" | "announcement" | "store"> & { packagingWeight?: number };
   setCurrency: (c: Currency) => void;
   setCountry: (c: string) => void;
   /** Format a catalogue price for this shopper (country VAT rules + display currency). */
@@ -46,10 +47,13 @@ export function Providers({
   initialCurrency: Currency;
   initialCountry: string;
   catalog: ProductLite[];
-  settings: Pick<Settings, "shipping" | "vat" | "payments" | "announcement" | "store">;
+  settings: Pick<Settings, "shipping" | "vat" | "payments" | "announcement" | "store"> & { packagingWeight?: number };
 }) {
   // Apply admin-edited shipping/VAT/payment settings before anything prices a cart.
-  useMemo(() => applySettings(settings), [settings]);
+  useMemo(() => {
+    applySettings(settings);
+    setVariantWeights(catalog.flatMap((p) => p.variants.map((v) => [v.id, v.weight] as [string, number | undefined])));
+  }, [settings, catalog]);
   const router = useRouter();
   const [currency, setCurrencyState] = useState(initialCurrency);
   const [country, setCountryState] = useState(initialCountry);

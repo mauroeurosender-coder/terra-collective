@@ -4,6 +4,7 @@ import type { Collection, JournalPost, Product, Review } from "../types";
 import * as seed from "./seed";
 import { pages as staticPages, faq as staticFaq, type ContentPage, type FaqGroup } from "./pages";
 import { applySettings, defaultSettings, mergeSettings, type Settings } from "../settings";
+import { setVariantWeights } from "../geo";
 
 export type Catalog = { collections: Collection[]; products: Product[]; reviews: Review[]; journal: JournalPost[]; settings: Settings; pages: Record<string, unknown>; source: "seed" | "supabase" };
 
@@ -62,7 +63,7 @@ async function fromSupabase(): Promise<Catalog> {
   ]);
   for (const r of [cols, prods, revs, posts]) if (r.error) throw r.error;
   const settings = mergeSettings((sets.data as any[]) ?? []);
-  applySettings(settings);
+  applySettings({ ...settings, packagingWeight: settings.profit.packagingWeight });
   const pageMap = Object.fromEntries(((pgs.data as any[]) ?? []).map((p) => [p.slug, p.content]));
 
   const reviews: Review[] = (revs.data as any[]).map((r) => ({
@@ -101,7 +102,7 @@ async function fromSupabase(): Promise<Catalog> {
       options: p.options ?? [],
       variants: [...(p.variants ?? [])]
         .sort((a, b) => a.position - b.position)
-        .map((v) => ({ id: v.id, sku: v.sku, options: v.options ?? {}, price: v.price, compareAt: v.compare_at ?? undefined, stock: v.stock, image: v.image_index ?? undefined })),
+        .map((v) => ({ id: v.id, sku: v.sku, options: v.options ?? {}, price: v.price, compareAt: v.compare_at ?? undefined, stock: v.stock, image: v.image_index ?? undefined, weight: v.weight_g ?? undefined })),
       shipping: p.shipping,
       tags: p.tags ?? [],
       createdAt: p.created_at.slice(0, 10),
@@ -134,6 +135,7 @@ async function fromSupabase(): Promise<Catalog> {
       blocks: p.blocks ?? [],
     }));
 
+  setVariantWeights(products.flatMap((p) => p.variants.map((v) => [v.id, v.weight] as [string, number | undefined])));
   return { collections, products, reviews, journal, settings, pages: pageMap, source: "supabase" };
 }
 

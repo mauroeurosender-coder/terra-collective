@@ -103,7 +103,7 @@ export function PurchasePanel({
 
   const c = getCountry(country);
   const taxNote = c.zone === "PT" || c.zone === "EU" ? dict.product.taxIncl : c.zone === "UK" ? dict.product.taxUK : dict.product.taxExport;
-  const quote = shippingQuote([{ profile: product.shipping, quantity: 1 }], variant.price, country);
+  const quote = shippingQuote([{ profile: product.shipping, quantity: 1, variantId: variant.id }], variant.price, country);
   const window_ = deliveryWindow(country, locale);
 
   return (

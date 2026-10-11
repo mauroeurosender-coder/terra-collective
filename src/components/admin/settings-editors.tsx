@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { UserPlus } from "lucide-react";
-import type { PaymentKey, Settings, ZoneSettings } from "@/lib/settings";
+import { Plus, Trash2, UserPlus } from "lucide-react";
+import type { PaymentKey, RateRow, Settings, ZoneSettings } from "@/lib/settings";
 import type { ZoneId } from "@/lib/geo";
 import { saveSetting } from "@/app/admin/(app)/content/actions";
 import { inviteStaff, removeStaff, setStaffRole } from "@/app/admin/(app)/settings/actions";
@@ -43,7 +43,16 @@ export function ShippingEditor({ initial }: { initial: Settings["shipping"] }) {
   const s = useSave();
   const set = (id: ZoneId, patch: Partial<ZoneSettings>) => setZ({ ...z, [id]: { ...z[id], ...patch } });
   return (
-    <Card title="Shipping zones & rates" action={<span className="text-xs text-ink-soft">Rates in € · each extra item adds €1.50</span>}>
+    <Card title="Shipping zones & rates" action={<span className="text-xs text-ink-soft">What customers pay at checkout</span>}>
+      <h3 className="mb-1 text-sm font-semibold">Price by parcel weight</h3>
+      <p className="mb-3 text-xs text-ink-soft">Used when every product in the cart has a weight (Analytics → Revenue & profit → Costs & weights), plus the box weight from Shipping & defaults. Started from the CTT price list: change any price, e.g. the US.</p>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {(Object.keys(z) as ZoneId[]).map((id) => (
+          <WeightTable key={id} label={zoneNames[id]} rows={z[id].weightRates ?? []} onChange={(rows) => set(id, { weightRates: rows })} />
+        ))}
+      </div>
+      <h3 className="mb-1 text-sm font-semibold">Zones</h3>
+      <p className="mb-3 text-xs text-ink-soft">Size-category prices are the fallback for carts with a product that has no weight yet (each extra item adds €1.50). Empty weight table = always size categories.</p>
       <div className="-mx-2 overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">
           <thead className="text-left text-xs text-ink-soft">
@@ -81,6 +90,27 @@ export function ShippingEditor({ initial }: { initial: Settings["shipping"] }) {
       <p className="mt-3 text-xs text-ink-soft">Shipping profiles are set on each product (Products → Shipping & care). Express next-day in Portugal adds €5.</p>
       <SaveRow pending={s.pending} Status={s.Status} onSave={() => s.run(() => saveSetting("shipping", z))} />
     </Card>
+  );
+}
+
+function WeightTable({ label, rows, onChange }: { label: string; rows: RateRow[]; onChange: (rows: RateRow[]) => void }) {
+  return (
+    <fieldset className="rounded-2xl bg-cream p-3">
+      <legend className="sr-only">{label} price by weight</legend>
+      <p className="mb-2 text-sm font-medium">{label}</p>
+      <div className="mb-1 grid grid-cols-[1fr_1fr_auto] gap-2 text-xs text-ink-soft"><span>Up to g</span><span>Price €</span><span className="w-7" /></div>
+      <div className="space-y-1.5">
+        {rows.map((r, i) => (
+          <div key={`${i}-${r.upTo}-${r.price}`} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
+            <input aria-label={`${label} weight ${i + 1}`} inputMode="numeric" defaultValue={r.upTo} onBlur={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, upTo: Number(e.target.value.replace(/[^0-9]/g, "")) || 0 } : x)).sort((a, b) => a.upTo - b.upTo))} className="field w-full py-1.5 text-right text-sm tabular-nums" />
+            <input aria-label={`${label} price ${i + 1}`} inputMode="decimal" defaultValue={toEuros(r.price)} onBlur={(e) => onChange(rows.map((x, j) => (j === i ? { ...x, price: toCents(e.target.value) ?? 0 } : x)))} className="field w-full py-1.5 text-right text-sm tabular-nums" />
+            <button type="button" onClick={() => onChange(rows.filter((_, j) => j !== i))} aria-label={`Remove ${label} row ${i + 1}`} className="grid h-7 w-7 place-items-center rounded-full text-coral-ink hover:bg-coral-tint"><Trash2 className="h-3.5 w-3.5" /></button>
+          </div>
+        ))}
+        {!rows.length && <p className="text-xs text-ink-soft">No weight prices: size categories are used.</p>}
+      </div>
+      <button type="button" onClick={() => onChange([...rows, { upTo: (rows[rows.length - 1]?.upTo ?? 0) * 2 || 100, price: rows[rows.length - 1]?.price ?? 0 }])} className="mt-2 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs text-azulejo hover:bg-azulejo-tint"><Plus className="h-3.5 w-3.5" /> Add weight</button>
+    </fieldset>
   );
 }
 

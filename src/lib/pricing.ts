@@ -22,7 +22,7 @@ export const seedDiscounts: Discount[] = [
 export const findDiscount = (code: string | null | undefined) =>
   code ? seedDiscounts.find((d) => d.code === code.trim().toUpperCase()) ?? null : null;
 
-export type PriceLine = { price: number; quantity: number; shipping: ShippingProfile };
+export type PriceLine = { price: number; quantity: number; shipping: ShippingProfile; variantId?: string };
 
 export type ShippingMethod = "standard" | "express";
 export const EXPRESS_SURCHARGE = 500;
@@ -37,7 +37,7 @@ export function computeTotals(opts: {
   const { lines, country, giftWrap, discount, method = "standard" } = opts;
   const catalogueSubtotal = lines.reduce((n, l) => n + l.price * l.quantity, 0);
   const subtotal = lines.reduce((n, l) => n + localizePrice(l.price, country) * l.quantity, 0);
-  const quote = shippingQuote(lines.map((l) => ({ profile: l.shipping, quantity: l.quantity })), catalogueSubtotal, country);
+  const quote = shippingQuote(lines.map((l) => ({ profile: l.shipping, quantity: l.quantity, variantId: l.variantId })), catalogueSubtotal, country);
   const expressAvailable = getCountry(country).zone === "PT";
   let shipping = quote.cost + (method === "express" && expressAvailable ? EXPRESS_SURCHARGE : 0);
   const wrap = giftWrap && lines.length ? store.giftWrapPrice : 0;

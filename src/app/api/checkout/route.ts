@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
   const discount = (await lookupDiscount(body.discountCode)) ?? (await lookupAutomatic());
   const totals = computeTotals({
-    lines: items.map((i) => ({ price: i.variant.price, quantity: i.quantity, shipping: i.product.shipping })),
+    lines: items.map((i) => ({ price: i.variant.price, quantity: i.quantity, shipping: i.product.shipping, variantId: i.variant.id })),
     country: body.form.country,
     giftWrap: !!body.giftWrap,
     discount,

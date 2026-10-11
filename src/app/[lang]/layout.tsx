@@ -54,7 +54,7 @@ export default async function LangLayout({ children, params }: LayoutProps<"/[la
   return (
     <html lang={lang === "pt" ? "pt-PT" : "en"} className={fontVars} data-theme={theme.id} style={theme.palette as React.CSSProperties}>
       <body className="flex min-h-dvh flex-col">
-        <Providers locale={lang} dict={dict} initialCurrency={currency} initialCountry={country} catalog={products.map(toLite)} settings={{ shipping: settings.shipping, vat: settings.vat, payments: settings.payments, announcement, store: settings.store }}>
+        <Providers locale={lang} dict={dict} initialCurrency={currency} initialCountry={country} catalog={products.map(toLite)} settings={{ shipping: settings.shipping, vat: settings.vat, payments: settings.payments, announcement, store: settings.store, packagingWeight: settings.profit.packagingWeight }}>
           <a href="#main" className="sr-only z-[100] rounded-full bg-ink px-4 py-2 text-cream focus:not-sr-only focus:fixed focus:top-3 focus:left-3">
             {dict.nav.skip}
           </a>

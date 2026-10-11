@@ -61,6 +61,8 @@ export function vatIncluded(cents: number, countryCode: string): number {
   return Math.round(cents - cents / (1 + c.vat));
 }
 
+import { rateFor, type RateRow } from "./shipping-rates";
+
 export type ShippingProfile = "small" | "standard" | "statement" | "textile" | "digital";
 
 type Zone = {
@@ -68,41 +70,70 @@ type Zone = {
   days: [number, number];
   carrier: string;
   rates: Record<Exclude<ShippingProfile, "digital">, number>; // cents
+  /** Customer price by parcel weight (grams → cents). Empty = use `rates`. */
+  weightRates?: RateRow[];
   freeOver?: number; // cents
 };
 
+// CTT prices (no contract) as the starting customer table; edit in Admin → Settings → Shipping.
+const CTT_EUROPE: RateRow[] = [{ upTo: 100, price: 580 }, { upTo: 250, price: 755 }, { upTo: 500, price: 980 }, { upTo: 1000, price: 1320 }, { upTo: 2000, price: 2120 }];
+const CTT_US: RateRow[] = [{ upTo: 100, price: 790 }, { upTo: 250, price: 1010 }, { upTo: 500, price: 1570 }, { upTo: 1000, price: 2675 }, { upTo: 2000, price: 3925 }];
+const CTT_ROW: RateRow[] = [{ upTo: 100, price: 755 }, { upTo: 250, price: 930 }, { upTo: 500, price: 1570 }, { upTo: 1000, price: 2675 }, { upTo: 2000, price: 3925 }];
+
+/** Packed weight of each variant (grams), registered from the catalogue on server and client. */
+const variantWeights = new Map<string, number>();
+export function setVariantWeights(entries: Iterable<[string, number | null | undefined]>) {
+  variantWeights.clear();
+  for (const [id, w] of entries) if (w != null) variantWeights.set(id, w);
+}
+let packagingGrams = 0;
+export function setPackagingWeight(g: number) {
+  packagingGrams = g || 0;
+}
+
 export const zones: Record<ZoneId, Zone> = {
   PT: { id: "PT", days: [1, 3], carrier: "CTT Expresso", rates: { small: 390, standard: 490, statement: 990, textile: 490 }, freeOver: 6000 },
-  EU: { id: "EU", days: [3, 7], carrier: "CTT / DHL", rates: { small: 790, standard: 990, statement: 2490, textile: 990 }, freeOver: 15000 },
-  UK: { id: "UK", days: [4, 8], carrier: "DHL Express", rates: { small: 1190, standard: 1490, statement: 3490, textile: 1490 } },
-  US: { id: "US", days: [6, 12], carrier: "DHL Express", rates: { small: 1490, standard: 1990, statement: 4990, textile: 1990 } },
-  ROW: { id: "ROW", days: [7, 15], carrier: "DHL Express", rates: { small: 1790, standard: 2490, statement: 5490, textile: 2490 } },
+  EU: { id: "EU", days: [3, 7], carrier: "CTT", rates: { small: 790, standard: 990, statement: 2490, textile: 990 }, weightRates: CTT_EUROPE, freeOver: 15000 },
+  UK: { id: "UK", days: [4, 8], carrier: "CTT", rates: { small: 1190, standard: 1490, statement: 3490, textile: 1490 }, weightRates: CTT_EUROPE },
+  US: { id: "US", days: [6, 12], carrier: "CTT", rates: { small: 1490, standard: 1990, statement: 4990, textile: 1990 }, weightRates: CTT_US },
+  ROW: { id: "ROW", days: [7, 15], carrier: "CTT", rates: { small: 1790, standard: 2490, statement: 5490, textile: 2490 }, weightRates: CTT_ROW },
 };
 
 const profileWeight: Record<Exclude<ShippingProfile, "digital">, number> = { small: 0, textile: 1, standard: 2, statement: 3 };
 
 /**
- * Shipping for a cart: the heaviest profile's base rate, plus a small per-item
- * surcharge for additional fragile items. Free above the zone threshold.
+ * Shipping for a cart. By weight when the zone has a weight table and every
+ * product in the cart has a weight (products + box); otherwise the heaviest
+ * size category's rate plus €1.50 per extra item. Free above the zone threshold.
  */
 export function shippingQuote(
-  items: { profile: ShippingProfile; quantity: number }[],
+  items: { profile: ShippingProfile; quantity: number; variantId?: string }[],
   subtotalCents: number,
   countryCode: string,
 ) {
   const zone = zones[getCountry(countryCode).zone];
-  const physical = items.filter((i): i is { profile: Exclude<ShippingProfile, "digital">; quantity: number } => i.profile !== "digital");
+  const physical = items.filter((i): i is { profile: Exclude<ShippingProfile, "digital">; quantity: number; variantId?: string } => i.profile !== "digital");
   if (physical.length === 0) return { cost: 0, zone, free: false, remaining: zone.freeOver ?? null };
   const top = physical.reduce<Exclude<ShippingProfile, "digital">>(
     (acc, i) => (profileWeight[i.profile] > profileWeight[acc] ? i.profile : acc),
     "small",
   );
   const count = physical.reduce((n, i) => n + i.quantity, 0);
-  const base = zone.rates[top] + Math.max(0, count - 1) * 150;
+  let base = zone.rates[top] + Math.max(0, count - 1) * 150;
+  let grams: number | null = null;
+  if (zone.weightRates?.length) {
+    const ws = physical.map((i) => (i.variantId ? variantWeights.get(i.variantId) : undefined));
+    if (ws.every((w) => w != null)) {
+      grams = packagingGrams + physical.reduce((n, i, k) => n + (ws[k] as number) * i.quantity, 0);
+      const hit = rateFor(zone.weightRates, grams);
+      if (hit) base = hit.price;
+    }
+  }
   const free = zone.freeOver != null && subtotalCents >= zone.freeOver;
   return {
     cost: free ? 0 : base,
     zone,
+    grams,
     free,
     remaining: zone.freeOver != null ? Math.max(0, zone.freeOver - subtotalCents) : null,
   };
