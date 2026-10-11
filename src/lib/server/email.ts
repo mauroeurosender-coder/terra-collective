@@ -8,7 +8,7 @@ const fill = (t: string, number: string) => t.replace(/\{number\}/g, number);
 
 export type EmailResult = { sent: boolean; reason?: string };
 
-const FROM = process.env.EMAIL_FROM ?? `${store.name} <hello@terracollective.pt>`;
+const FROM = process.env.EMAIL_FROM ?? `${store.name} <hello@terracolective.shop>`;
 
 /** Sends through Resend when RESEND_API_KEY is set; otherwise logs and reports not sent. */
 export async function sendEmail(to: string, subject: string, html: string): Promise<EmailResult> {

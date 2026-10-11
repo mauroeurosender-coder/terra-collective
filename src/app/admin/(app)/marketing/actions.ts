@@ -106,3 +106,26 @@ export async function notifyWaitlist(variantId: string): Promise<Result> {
   if (!process.env.RESEND_API_KEY) return { ok: false, error: "Emails can’t be sent until RESEND_API_KEY is set." };
   return { ok: true, message: `Notified ${sent} of ${reqs?.length ?? 0} people.` };
 }
+
+/* ------------------------------------------------------------------ Email sequences */
+
+export async function saveSequences(seqs: import("@/lib/email-sequences").EmailSequences): Promise<Result> {
+  await requireAdmin();
+  for (const [k, seq] of Object.entries(seqs)) {
+    for (const st of seq.steps) {
+      if (!Number.isFinite(st.delayHours) || st.delayHours < 0) return { ok: false, error: `${k}: the delay must be zero or more hours.` };
+      if (!st.subject.en.trim()) return { ok: false, error: `${k}: every email needs an English subject.` };
+    }
+  }
+  const sb = await supabaseServer();
+  const { error } = await sb.from("settings").upsert({ key: "email_sequences", value: seqs }, { onConflict: "key" });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/marketing");
+  return { ok: true, message: "Sequences saved." };
+}
+
+export async function previewSequenceStep(step: import("@/lib/email-sequences").SequenceStep, locale: "en" | "pt") {
+  await requireAdmin();
+  const { previewStep } = await import("@/lib/server/sequences");
+  return previewStep(step, locale);
+}

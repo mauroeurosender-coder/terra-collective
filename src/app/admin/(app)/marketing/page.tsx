@@ -4,20 +4,42 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { Card, NotConnected, PageHeader, eur } from "@/components/admin/ui";
 import { DiscountsPanel, GiftCardsPanel, WaitlistPanel, type DiscountRow, type WaitRow } from "@/components/admin/marketing";
+import { SequencesEditor, type SequenceStats } from "@/components/admin/sequences-editor";
+import { loadSequences, runSequences } from "@/lib/server/sequences";
 
 export const metadata = { title: "Marketing" };
 const daysAgo = (n: number) => new Date(Date.now() - n * 86400_000).toISOString();
-const tabs = [["discounts", "Discount codes"], ["promotions", "Automatic promotions"], ["gift-cards", "Gift cards"], ["subscribers", "Newsletter"], ["carts", "Abandoned carts"], ["waitlists", "Back in stock"]];
+const tabs = [["sequences", "Email sequences"], ["discounts", "Discount codes"], ["promotions", "Automatic promotions"], ["gift-cards", "Gift cards"], ["subscribers", "Newsletter"], ["carts", "Abandoned carts"], ["waitlists", "Back in stock"]];
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export default async function MarketingPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   await requireAdmin();
   if (!supabaseConfigured) return <><PageHeader title="Marketing" /><NotConnected /></>;
-  const { tab = "discounts" } = await searchParams;
+  const { tab = "sequences" } = await searchParams;
   const sb = await supabaseServer();
 
   let body: React.ReactNode = null;
-  if (tab === "discounts" || tab === "promotions") {
+  if (tab === "sequences") {
+    const [seqs, run, { data: sends }, { data: codes }, { count: suppressed }] = await Promise.all([
+      loadSequences(),
+      runSequences({ send: false }),
+      sb.from("email_sends").select("sequence, step, status").gt("created_at", daysAgo(90)),
+      sb.from("discounts").select("code").eq("active", true).not("code", "is", null),
+      sb.from("email_suppressions").select("email", { count: "exact", head: true }),
+    ]);
+    const stats: SequenceStats = {};
+    for (const x of (sends ?? []) as { sequence: string; step: number; status: string }[]) {
+      const k = `${x.sequence}:${x.step}`;
+      stats[k] = stats[k] ?? { sent: 0, skipped: 0, failed: 0, due: 0 };
+      if (x.status === "sent" || x.status === "skipped" || x.status === "failed") stats[k][x.status]++;
+    }
+    for (const d of run.due) {
+      const k = `${d.sequence}:${d.step}`;
+      stats[k] = stats[k] ?? { sent: 0, skipped: 0, failed: 0, due: 0 };
+      stats[k].due++;
+    }
+    body = <SequencesEditor initial={seqs} stats={stats} emailConnected={run.emailConnected} codes={(codes ?? []).map((c: any) => String(c.code).toUpperCase())} unsubscribed={suppressed ?? 0} />;
+  } else if (tab === "discounts" || tab === "promotions") {
     const { data } = await sb.from("discounts").select("*").eq("automatic", tab === "promotions").order("created_at", { ascending: false });
     const rows: DiscountRow[] = (data ?? []).map((d: any) => ({ id: d.id, code: d.code, kind: d.kind, value: d.value, minSpend: d.min_spend, startsAt: d.starts_at, endsAt: d.ends_at, usageLimit: d.usage_limit, automatic: d.automatic, active: d.active, usedCount: d.used_count }));
     body = <DiscountsPanel rows={rows} automatic={tab === "promotions"} />;
