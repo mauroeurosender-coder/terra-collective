@@ -14,14 +14,14 @@ export async function ProfitView({ range, period, isOwner, section }: { range: R
   const [r, { data: sets }, { data: variants }, { data: exps }] = await Promise.all([
     getProfitReport(sb, range),
     sb.from("settings").select("key, value"),
-    sb.from("variants").select("id, sku, options, price, cost, weight_g, image_index, position, products!inner(name, status, created_at, product_media(url, position, kind))").neq("products.status", "archived"),
+    sb.from("variants").select("id, sku, options, price, cost, weight_g, image_index, position, products!inner(name, status, created_at, product_media(url, position, kind))"),
     sb.from("expenses").select("id, date, description, category, amount").gte("date", range.from.toISOString().slice(0, 10)).lt("date", range.to.toISOString().slice(0, 10)).order("date", { ascending: false }),
   ]);
   const t = r.totals;
   const costs: CostRow[] = ((variants ?? []) as any[])
     .map((v) => {
       const media = [...(v.products.product_media ?? [])].filter((m: any) => m.kind === "image").sort((a: any, b: any) => a.position - b.position);
-      return { id: v.id, product: v.products.name.en, variant: Object.values(v.options ?? {}).join(" · "), sku: v.sku, price: v.price, cost: v.cost, weight: v.weight_g ?? null, image: media[v.image_index ?? 0]?.url ?? media[0]?.url, _pos: v.position };
+      return { id: v.id, product: v.products.status === "archived" ? `${v.products.name.en} (archived)` : v.products.name.en, variant: Object.values(v.options ?? {}).join(" · "), sku: v.sku, price: v.price, cost: v.cost, weight: v.weight_g ?? null, image: media[v.image_index ?? 0]?.url ?? media[0]?.url, _pos: v.position };
     })
     .sort((a, b) => a.product.localeCompare(b.product) || a._pos - b._pos)
     .map(({ _pos, ...x }) => (void _pos, x));

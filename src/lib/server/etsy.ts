@@ -15,6 +15,17 @@ import type { OrderStatus } from "../admin/types";
 
 // ETSY_API_BASE only exists to test against a local mock server.
 const API = process.env.ETSY_API_BASE ?? "https://api.etsy.com/v3";
+/** Etsy returns titles and option values HTML-encoded (e.g. &quot;, &#39;, &amp;). */
+export const decodeEntities = (s: string) =>
+  s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&quot;/g, "\"")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+
 export const ETSY_SCOPES = "transactions_r transactions_w listings_r shops_r profile_r email_r";
 
 export type EtsyData = {
@@ -225,8 +236,8 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
         product_id: v?.product_id ?? p?.id ?? null,
         variant_id: variantId,
         sku: t.sku || (t.product_id ? etsyVariantSku(t.listing_id, t.product_id) : null),
-        name: t.title,
-        variant_label: (t.variations ?? []).map((x) => x.formatted_value).join(" · ") || null,
+        name: decodeEntities(t.title),
+        variant_label: (t.variations ?? []).map((x) => decodeEntities(x.formatted_value)).join(" · ") || null,
         unit_price: cents(t.price),
         quantity: t.quantity,
       };
@@ -483,10 +494,11 @@ export async function importEtsyListings() {
       continue;
     }
 
+    l.title = decodeEntities(l.title);
     let slug = slugify(l.title) || `etsy-${l.listing_id}`;
     if (slugs.has(slug)) slug = `${slug.slice(0, 50)}-${l.listing_id}`;
     slugs.add(slug);
-    const description = (l.description ?? "").replace(/\r/g, "");
+    const description = decodeEntities(l.description ?? "").replace(/\r/g, "");
     const titleLower = l.title.toLowerCase();
     const { data: prodRow, error } = await sb
       .from("products")
