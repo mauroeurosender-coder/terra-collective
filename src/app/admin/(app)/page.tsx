@@ -8,6 +8,9 @@ import { countries } from "@/lib/geo";
 import { RevenueChart } from "@/components/admin/revenue-chart";
 import { RangePicker } from "@/components/admin/range-picker";
 import { BarList, Card, Kpi, StatusPill, TestBadge, eur } from "@/components/admin/ui";
+import { TodayPanel } from "@/components/admin/today-panel";
+import { getToday } from "@/lib/admin/today";
+import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 
 export const metadata = { title: "Dashboard" };
 
@@ -17,6 +20,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const range = parseRange(sp);
   const [d, session] = await Promise.all([getDashboard(range), getAdminSession()]);
+  const today = supabaseConfigured && session ? await getToday(await supabaseServer(), session.role === "owner") : null;
   const period = range.key === "today" ? "yesterday" : "prior period";
   const lastDay = new Date(range.to.getTime() - 86_400_000);
   const hour = new Date().getHours();
@@ -31,6 +35,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
         <RangePicker current={range.key} from={isoDate(range.from)} to={isoDate(lastDay)} />
       </header>
+
+      {today && <TodayPanel t={today} />}
 
       <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-5">
         <Kpi label="Revenue" value={eur(d.kpis.revenue)} current={d.kpis.revenue} previous={d.prev.revenue} periodLabel={period} />

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import clsx from "clsx";
-import { AlertTriangle, Check, Download, Loader2, Truck } from "lucide-react";
+import { AlertTriangle, Check, Download, Loader2, Printer, Truck } from "lucide-react";
 import { markShipped } from "@/app/admin/(app)/orders/actions";
 import type { CttOrder } from "@/lib/admin/ctt-orders";
 import { Card } from "./ui";
@@ -87,7 +87,10 @@ export function CttExport({ orders }: { orders: CttOrder[] }) {
             <input type="checkbox" checked={saveCustoms} onChange={(e) => setSaveCustoms(e.target.checked)} className="h-4 w-4 accent-azulejo" />
             Remember customs descriptions and codes on each product
           </label>
-          <button disabled={!chosen.length || busy !== null} onClick={download} className="btn-primary ml-auto min-h-10 py-2 text-sm">
+          <a href={`/admin/orders/pick-list?ids=${chosen.map((o) => o.id).join(",")}`} target="_blank" rel="noopener" aria-disabled={!chosen.length} className={clsx("btn-outline ml-auto min-h-10 py-2 text-sm", !chosen.length && "pointer-events-none opacity-50")}>
+            <Printer className="h-4 w-4" /> Pick list & slips
+          </a>
+          <button disabled={!chosen.length || busy !== null} onClick={download} className="btn-primary min-h-10 py-2 text-sm">
             {busy === "file" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Download CTT file ({chosen.length})
           </button>
         </div>
