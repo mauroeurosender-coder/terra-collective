@@ -459,3 +459,100 @@ export async function syncInvoiceStatuses(limit = 60) {
   }
   return { issued, deleted };
 }
+
+/* ------------------------------------------------------------------ Finalising drafts */
+
+type MoloniDraft = {
+  document_id: number;
+  status: number;
+  date: string;
+  expiration_date?: string;
+  document_set_id: number;
+  customer_id: number;
+  our_reference?: string;
+  your_reference?: string;
+  notes?: string;
+  financial_discount?: number;
+  special_discount?: number;
+  eac_id?: number;
+  products?: { product_id: number; name: string; summary?: string; qty: number; price: number; discount?: number; order?: number; exemption_reason?: string; taxes?: { tax_id: number; value?: number; order?: number; cumulative?: number }[] }[];
+  payments?: { payment_method_id: number; date: string; value: number; notes?: string }[];
+};
+const day = (s: string | undefined) => String(s ?? "").slice(0, 10);
+
+/** Closes one Moloni draft exactly as it is in Moloni (keeps any edits made there): it becomes a certified invoice sent to the AT. */
+async function closeDraft(m: MoloniData, draft: MoloniDraft) {
+  const products = (draft.products ?? []).map((p, i) => ({
+    product_id: p.product_id,
+    name: p.name,
+    summary: p.summary || undefined,
+    qty: Number(p.qty),
+    price: Number(p.price),
+    discount: Number(p.discount) || 0,
+    order: p.order ?? i + 1,
+    exemption_reason: p.exemption_reason || undefined,
+    taxes: (p.taxes ?? []).map((t) => ({ tax_id: t.tax_id, value: t.value != null ? Number(t.value) : undefined, order: t.order, cumulative: t.cumulative })),
+  }));
+  if (!products.length) throw new Error("O rascunho não tem artigos.");
+  await moloni("invoiceReceipts/update", {
+    company_id: m.company_id,
+    document_id: draft.document_id,
+    date: day(draft.date),
+    expiration_date: day(draft.expiration_date ?? draft.date),
+    document_set_id: draft.document_set_id,
+    customer_id: draft.customer_id,
+    our_reference: draft.our_reference || undefined,
+    your_reference: draft.your_reference || undefined,
+    financial_discount: draft.financial_discount || undefined,
+    special_discount: draft.special_discount || undefined,
+    eac_id: draft.eac_id || undefined,
+    notes: draft.notes || undefined,
+    products,
+    payments: (draft.payments ?? []).map((p) => ({ payment_method_id: p.payment_method_id, date: day(p.date), value: Number(p.value), notes: p.notes || undefined })),
+    status: 1,
+  });
+}
+
+/**
+ * Finalises the Moloni drafts of these orders (or all drafts), oldest invoice date first so the
+ * series stays in date order. Runs only when the owner confirms in the admin. Failures stay drafts.
+ */
+export async function finalizeDrafts(orderIds?: string[]) {
+  const sb = supabaseService();
+  const m = await getMoloni();
+  if (!m.company_id) throw new Error("O Moloni não está ligado.");
+  let q = sb.from("orders").select("id, number, invoice_ref").eq("invoice_status", "draft");
+  if (orderIds?.length) q = q.in("id", orderIds);
+  const { data: orders } = await q;
+
+  const drafts: { order: { id: string; number: string }; doc: MoloniDraft }[] = [];
+  const failed: { number: string; error: string }[] = [];
+  for (const o of orders ?? []) {
+    try {
+      const doc = await moloni<MoloniDraft | unknown[]>("invoiceReceipts/getOne", { company_id: m.company_id, document_id: Number(o.invoice_ref) });
+      if (!doc || Array.isArray(doc) || !(doc as MoloniDraft).document_id) {
+        failed.push({ number: o.number, error: "rascunho não encontrado no Moloni (apagado?)" });
+        continue;
+      }
+      if (Number((doc as MoloniDraft).status) === 1) continue; // already closed in Moloni: the status sync picks it up
+      drafts.push({ order: o, doc: doc as MoloniDraft });
+    } catch (e) {
+      failed.push({ number: o.number, error: (e as Error).message });
+    }
+  }
+  drafts.sort((a, b) => day(a.doc.date).localeCompare(day(b.doc.date)) || a.doc.document_id - b.doc.document_id);
+
+  let issued = 0;
+  for (const { order, doc } of drafts) {
+    try {
+      await closeDraft(m, doc);
+      issued++;
+      await sb.from("order_events").insert({ order_id: order.id, kind: "note", body: "Fatura finalizada a partir do admin (enviada para a AT pelo Moloni)." });
+    } catch (e) {
+      failed.push({ number: order.number, error: (e as Error).message.replace(/^Moloni invoiceReceipts\/update: /, "").slice(0, 300) });
+    }
+  }
+  // Fetch numbers and PDF links of the newly closed invoices (and any closed directly in Moloni).
+  await syncInvoiceStatuses(Math.max(60, (orders?.length ?? 0) + 10));
+  return { issued, failed };
+}

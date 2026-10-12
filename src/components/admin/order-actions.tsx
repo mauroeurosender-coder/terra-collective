@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Printer, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { addNote, createInvoiceDraft, deleteTestOrder, markShipped, refundOrder, setStatus } from "@/app/admin/(app)/orders/actions";
+import { addNote, createInvoiceDraft, deleteTestOrder, finalizeInvoices, markShipped, refundOrder, setStatus } from "@/app/admin/(app)/orders/actions";
 import type { OrderStatus } from "@/lib/admin/types";
 
 type Msg = { kind: "ok" | "error"; text: string } | null;
@@ -184,6 +184,51 @@ export function InvoiceButton({ orderId, retry }: { orderId: string; retry: bool
       >
         {pending ? "A criar…" : retry ? "Tentar de novo" : "Criar rascunho no Moloni"}
       </button>
+      <Feedback msg={msg} />
+    </div>
+  );
+}
+
+/**
+ * Finalises Moloni drafts: one order (orderIds = [id]) or all drafts (no ids).
+ * Two steps on purpose: a finalised invoice goes to the AT and can only be corrected with a credit note.
+ */
+export function FinalizeInvoicesButton({ orderIds, count }: { orderIds?: string[]; count: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+  const [msg, setMsg] = useState<Msg>(null);
+  if (!count) return null;
+  const one = count === 1;
+  return (
+    <div>
+      {!confirming ? (
+        <button type="button" onClick={() => { setMsg(null); setConfirming(true); }} className="btn-primary min-h-9 py-1.5 text-sm">
+          {orderIds?.length === 1 ? "Finalizar fatura" : `Finalizar ${one ? "a fatura" : `as ${count} faturas`}`}
+        </button>
+      ) : (
+        <div role="alertdialog" aria-label="Confirmar faturas" className="rounded-xl border border-coral/50 bg-coral-tint/40 p-3 text-sm">
+          <p>
+            {one ? "A fatura vai ser emitida" : `${count} faturas vão ser emitidas`} no Moloni tal como estão nos rascunhos e comunicadas à AT. Depois de emitida, uma fatura só se corrige com nota de crédito.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => start(async () => {
+                const r = await finalizeInvoices(orderIds);
+                setConfirming(false);
+                setMsg(r.ok ? { kind: "ok", text: r.message ?? "Feito." } : { kind: "error", text: r.error });
+                router.refresh();
+              })}
+              className="btn-primary min-h-9 py-1.5 text-sm"
+            >
+              {pending ? "A emitir…" : one ? "Sim, emitir" : `Sim, emitir ${count}`}
+            </button>
+            <button type="button" disabled={pending} onClick={() => setConfirming(false)} className="btn-outline min-h-9 py-1.5 text-sm">Cancelar</button>
+          </div>
+        </div>
+      )}
       <Feedback msg={msg} />
     </div>
   );

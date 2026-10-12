@@ -6,6 +6,7 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { countries } from "@/lib/geo";
 import type { OrderStatus } from "@/lib/admin/types";
 import { EmptyState, NotConnected, PageHeader, StatusPill, TestBadge, eur } from "@/components/admin/ui";
+import { FinalizeInvoicesButton } from "@/components/admin/order-actions";
 
 export const metadata = { title: "Orders" };
 
@@ -20,7 +21,7 @@ const tabs: { key: string; label: string; statuses?: OrderStatus[] }[] = [
 const PAGE = 30;
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireAdmin();
+  const session = await requireAdmin();
   if (!supabaseConfigured) return <><PageHeader title="Orders" /><NotConnected /></>;
   const sp = await searchParams;
   const tab = tabs.find((t) => t.key === sp.tab) ?? tabs[0];
@@ -47,6 +48,8 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     Promise.all(tabs.filter((t) => t.statuses).map((t) => sb.from("orders").select("id", { count: "exact", head: true }).in("status", t.statuses!).then((r) => [t.key, r.count ?? 0] as const))),
   ]);
   const countMap = Object.fromEntries(counts);
+  // The finalise button acts on every draft, so show the true total, not the filtered page.
+  const drafts = sp.invoice === "draft" && session.role === "owner" ? ((await sb.from("orders").select("id", { count: "exact", head: true }).eq("invoice_status", "draft")).count ?? 0) : 0;
   const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE));
   const link = (patch: Record<string, string | number | undefined>) => {
     const next = new URLSearchParams(Object.entries({ tab: tab.key, q: q || undefined, country: sp.country, source: sp.source, invoice: sp.invoice, page: undefined, ...patch }).filter(([, v]) => v != null && v !== "") as [string, string][]);
@@ -56,6 +59,12 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   return (
     <div className="mx-auto max-w-[1280px]">
       <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<><Link href="/admin/orders/ctt" className="btn-outline min-h-10 py-2 text-sm"><Truck className="h-4 w-4" /> CTT shipping</Link><Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link></>} />
+      {drafts > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-line/70 bg-paper p-4">
+          <p className="min-w-60 flex-1 text-sm text-ink-soft">{drafts} rascunho{drafts === 1 ? "" : "s"} de fatura no Moloni. Se já os reviu (ou não precisam de revisão), emita-os todos de uma vez, pela ordem das datas.</p>
+          <FinalizeInvoicesButton count={drafts} />
+        </div>
+      )}
 
       <nav aria-label="Order status" className="-mx-4 mb-4 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:px-0">
         <ul className="flex gap-1.5">

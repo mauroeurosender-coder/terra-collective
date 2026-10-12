@@ -10,7 +10,7 @@ import { Card, NotConnected, PageHeader, StatusPill, TestBadge, eur } from "@/co
 import { OrderCosts } from "@/components/admin/profit-editors";
 import { orderProfit } from "@/lib/admin/profit";
 import { mergeSettings } from "@/lib/settings";
-import { DeleteTestOrder, InvoiceButton, NoteForm, RefundForm, WorkflowActions } from "@/components/admin/order-actions";
+import { DeleteTestOrder, FinalizeInvoicesButton, InvoiceButton, NoteForm, RefundForm, WorkflowActions } from "@/components/admin/order-actions";
 
 export const metadata = { title: "Order" };
 
@@ -147,7 +147,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             <div className="mt-4 border-t border-line pt-3 text-sm">
               <p className="flex items-center gap-2 font-medium"><Receipt className="h-4 w-4" /> Fatura (Moloni)</p>
               <p className="mt-1 text-ink-soft">
-                {o.invoice_status === "draft" ? <>Rascunho criado (id {o.invoice_ref}). Finalize no Moloni.</>
+                {o.invoice_status === "draft" ? <>Rascunho criado no Moloni (id {o.invoice_ref}). Reveja-o lá se quiser e finalize aqui ou no Moloni.</>
                   : o.invoice_status === "issued" ? <span className="font-medium text-olive">Faturada: {o.invoice_ref}{o.invoice_url && <> · <a className="link" href={o.invoice_url} target="_blank" rel="noopener noreferrer">ver PDF</a></>}</span>
                   : o.invoice_status === "deleted" ? <>O rascunho foi apagado no Moloni. Por faturar.</>
                   : o.invoice_status === "pending" ? <>A criar…</>
@@ -156,6 +156,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
                   : ["shipped", "delivered"].includes(o.status) ? <>Ainda sem fatura.</>
                   : <>A fatura é criada quando a encomenda for marcada como enviada.</>}
               </p>
+              {session.role === "owner" && o.invoice_status === "draft" && <div className="mt-2"><FinalizeInvoicesButton orderIds={[o.id]} count={1} /></div>}
               {session.role === "owner" && !o.test && o.invoice_status !== "draft" && o.invoice_status !== "issued" && ["paid", "packing", "shipped", "delivered"].includes(o.status) && <div className="mt-2"><InvoiceButton orderId={o.id} retry={o.invoice_status === "error"} /></div>}
             </div>
           </Card>

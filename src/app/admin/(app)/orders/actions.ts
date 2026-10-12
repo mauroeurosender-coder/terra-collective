@@ -153,3 +153,21 @@ export async function createInvoiceDraft(orderId: string): Promise<Result> {
     return { ok: false, error: (e as Error).message };
   }
 }
+
+/** Finalises Moloni drafts (one order, a list, or all). Owner only, after confirming; irreversible. */
+export async function finalizeInvoices(orderIds?: string[]): Promise<Result> {
+  const session = await requireAdmin();
+  if (session.role !== "owner") return { ok: false, error: "Only the owner can issue invoices." };
+  const { finalizeDrafts } = await import("@/lib/server/moloni");
+  try {
+    const r = await finalizeDrafts(orderIds);
+    revalidatePath("/admin/orders");
+    revalidatePath("/admin");
+    for (const id of orderIds ?? []) revalidatePath(`/admin/orders/${id}`);
+    const done = `${r.issued} fatura${r.issued === 1 ? "" : "s"} finalizada${r.issued === 1 ? "" : "s"} e enviada${r.issued === 1 ? "" : "s"} para a AT.`;
+    if (r.failed.length) return { ok: false, error: `${done} Não finalizadas: ${r.failed.map((f) => `${f.number} (${f.error})`).join("; ")}` };
+    return { ok: true, message: r.issued ? done : "Não havia rascunhos por finalizar." };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
