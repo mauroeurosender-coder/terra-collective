@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import clsx from "clsx";
-import { FileUp, Loader2 } from "lucide-react";
+import { Camera, FileUp, Loader2 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { registerUpload } from "@/app/admin/(app)/accounting/actions";
 
@@ -13,9 +13,28 @@ const types = [
   { key: "sale-cn", label: "Nota de crédito emitida (venda)", direction: "sale", kind: "credit_note" },
 ] as const;
 
+/** Phone photos are often 4–12 MB: shrink to ~2400 px JPEG so they upload fast on mobile data and stay readable. */
+async function shrink(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.type === "image/gif" || file.size < 1.5 * 1024 * 1024) return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * k);
+    canvas.height = Math.round(bmp.height * k);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file; // browser can’t decode it (e.g. some HEIC): upload as is
+  }
+}
+
 export function AccountingUpload({ gemini }: { gemini: boolean }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
   const [type, setType] = useState<(typeof types)[number]["key"]>("purchase-invoice");
   const [busy, setBusy] = useState<string | null>(null);
   const [over, setOver] = useState(false);
@@ -27,7 +46,9 @@ export function AccountingUpload({ gemini }: { gemini: boolean }) {
     const list = [...files].filter((f) => /pdf|image\//.test(f.type));
     if (!list.length) return setError("Use PDF ou fotografia (JPG, PNG, HEIC).");
     let lastId: string | undefined;
-    for (const [i, file] of list.entries()) {
+    for (const [i, original] of list.entries()) {
+      setBusy(`${i + 1}/${list.length} · a preparar ${original.name}…`);
+      const file = await shrink(original);
       if (file.size > 15 * 1024 * 1024) {
         setError(`${file.name} é demasiado grande (máx. 15 MB).`);
         continue;
@@ -69,7 +90,12 @@ export function AccountingUpload({ gemini }: { gemini: boolean }) {
         <span className="font-medium">{busy ?? "Carregar documentos (PDF ou fotografia)"}</span>
         {!busy && <span className="text-ink-soft">Arraste para aqui ou clique. {gemini ? "Os dados são lidos automaticamente para confirmar." : "Depois preenche os dados."}</span>}
       </button>
-      <input ref={input} type="file" accept="application/pdf,image/*" multiple hidden onChange={(e) => e.target.files && upload(e.target.files)} />
+      <button type="button" disabled={!!busy} onClick={() => camera.current?.click()} className="btn-outline mt-3 min-h-11 w-full py-2.5 text-sm md:w-auto">
+        <Camera className="h-4 w-4" /> Fotografar fatura
+      </button>
+      <input ref={input} type="file" accept="application/pdf,image/*" multiple hidden onChange={(e) => { if (e.target.files) upload([...e.target.files]); e.target.value = ""; }} />
+      {/* Opens the phone’s rear camera directly */}
+      <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { if (e.target.files) upload([...e.target.files]); e.target.value = ""; }} />
       {error && <p role="alert" className="mt-2 text-sm text-coral-ink">{error}</p>}
     </div>
   );

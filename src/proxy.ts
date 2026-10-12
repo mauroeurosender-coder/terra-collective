@@ -18,6 +18,9 @@ function detectCountry(req: NextRequest) {
   return countries.some((c) => c.code === header) ? header : null;
 }
 
+// Home-screen app files: phones fetch these without the login cookie. They contain no data.
+const PUBLIC_ADMIN = /^\/admin\/(manifest\.webmanifest|app-icon\/\d+)$/;
+
 /** Keeps the Supabase auth cookie fresh for /admin; the layout does the real staff check. */
 async function adminSession(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -35,7 +38,7 @@ async function adminSession(req: NextRequest) {
     },
   });
   const { data } = await sb.auth.getUser();
-  if (!data.user && req.nextUrl.pathname !== "/admin/login") {
+  if (!data.user && req.nextUrl.pathname !== "/admin/login" && !PUBLIC_ADMIN.test(req.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/admin/login", req.url));
   }
   return res;

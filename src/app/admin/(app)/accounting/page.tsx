@@ -93,7 +93,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
         <Card title="Prazos fiscais">
           <TaxCalendar items={cal} done={(doneRow?.value ?? {}) as Record<string, string>} today={today} />
         </Card>
-        <Card title="Carregar documentos">
+        <Card title="Carregar documentos" className="scroll-mt-20"><span id="upload" />
           <AccountingUpload gemini={geminiConfigured()} />
           {!geminiConfigured() && <p className="mt-3 text-xs text-ink-soft">Leitura automática desligada: adicione <code>GEMINI_API_KEY</code> nas variáveis de ambiente do Hostinger para os dados serem lidos dos PDFs.</p>}
         </Card>
