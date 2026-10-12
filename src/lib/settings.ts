@@ -56,6 +56,9 @@ export const defaultProfitSettings = (): ProfitSettings => ({
   stripe: { pct: 1.5, fixed: 25 },
 });
 
+/** Fixed values of the CTT bulk-label file (see the "Dados" sheet of CTT’s template). */
+export type CttSettings = { clientNumber: string; contractNumber: string; product: string; content: string; format: string; category: string; fallbackEmail: string };
+
 export type PaymentKey = "card" | "mbway" | "multibanco" | "paypal" | "klarna" | "applepay" | "googlepay";
 
 /** rates = price by size category (fallback); weightRates = what customers pay by parcel weight (used when every product in the cart has a weight). */
@@ -71,6 +74,7 @@ export type Settings = {
   emails: Record<"shipped" | "refund" | "confirmation", { subject: L; intro: L }>;
   theme: ThemeSettings;
   profit: ProfitSettings;
+  ctt: CttSettings;
   home_layout: HomeSection[];
   /** Saved homepage designs + A/B test. Missing until first saved; see normalizeDesigns. */
   home_designs?: HomeDesigns;
@@ -96,6 +100,8 @@ export const defaultSettings = (): Settings => ({
   store: { name: store.name, email: store.email, address: store.address, nif: store.nif, instagram: store.instagram },
   theme: defaultThemeSettings(),
   profit: defaultProfitSettings(),
+  // Client number from the CTT file; 888888888 = no contract. C01 Correio Azul · 1 goods · 3 postal packet · 11 sale of goods.
+  ctt: { clientNumber: "12175670", contractNumber: "888888888", product: "C01", content: "1", format: "3", category: "11", fallbackEmail: "" },
   home_layout: defaultHomeLayout(),
   home_designs: undefined,
   emails: {
