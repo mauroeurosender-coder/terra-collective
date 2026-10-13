@@ -181,7 +181,7 @@ export function AccountingDocEditor({ id, direction, initial, confirmed, stockAp
         <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-10">
           <p role={msg?.ok === false ? "alert" : "status"} className={clsx("min-w-0 text-sm", msg?.ok === false ? "text-coral-ink" : "text-ink-soft")}>{msg?.text ?? (confirmed ? "Confirmado" : "Rascunho: reveja e confirme")}</p>
           <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={pending} onClick={() => confirm("Apagar este documento e o ficheiro?") && run(() => deleteDoc(id), () => router.push("/admin/accounting"))} className="btn min-h-10 px-4 py-2 text-sm text-coral-ink hover:bg-coral-tint"><Trash2 className="h-4 w-4" /> Apagar</button>
+            <button type="button" disabled={pending} onClick={() => confirm("Apagar este documento e o ficheiro?") && run(() => deleteDoc(id), () => router.push("/admin/accounting"))} className="btn-outline min-h-10 border-coral/50 py-2 text-sm text-coral-ink hover:bg-coral-tint"><Trash2 className="h-4 w-4" /> Apagar documento</button>
             {confirmed ? (
               <button type="button" disabled={pending} onClick={() => run(() => unconfirmDoc(id))} className="btn-outline min-h-10 py-2 text-sm"><RotateCcw className="h-4 w-4" /> Voltar a rascunho</button>
             ) : (

@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import clsx from "clsx";
-import { Check, FileText, Loader2 } from "lucide-react";
-import { confirmDocs } from "@/app/admin/(app)/accounting/actions";
+import { Check, FileText, Loader2, Trash2 } from "lucide-react";
+import { confirmDocs, deleteDocs } from "@/app/admin/(app)/accounting/actions";
 import { eur } from "./ui";
 
 export type DocRow = {
@@ -26,7 +26,8 @@ export type DocRow = {
 export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
   const router = useRouter();
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"confirm" | "delete" | null>(null);
+  const [askDelete, setAskDelete] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const drafts = docs.filter((d) => !d.confirmed);
@@ -43,11 +44,22 @@ export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
     });
 
   async function confirm(ids: string[]) {
-    setBusy(true);
+    setBusy("confirm");
     setMsg(null);
     const res = await confirmDocs(ids);
-    setBusy(false);
+    setBusy(null);
     setMsg(res.ok ? { ok: true, text: res.message ?? "Confirmado." } : { ok: false, text: res.error });
+    router.refresh();
+  }
+
+  async function remove(ids: string[]) {
+    setBusy("delete");
+    setAskDelete(false);
+    setMsg(null);
+    const res = await deleteDocs(ids);
+    setBusy(null);
+    setPicked(new Set());
+    setMsg(res.ok ? { ok: true, text: res.message ?? "Apagado." } : { ok: false, text: res.error });
     router.refresh();
   }
 
@@ -57,12 +69,23 @@ export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? new Set() : new Set(drafts.map((d) => d.id)))} className="h-4 w-4 accent-azulejo" />
-            Selecionar todos por confirmar ({drafts.length})
+            Selecionar todos os rascunhos ({drafts.length})
           </label>
-          <button disabled={busy || selected.length === 0} onClick={() => confirm(selected)} className="btn-primary ml-auto min-h-10 py-2 text-sm">
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            {busy ? "A confirmar…" : `Confirmar selecionados (${selected.length})`}
+          <button disabled={busy !== null || selected.length === 0} onClick={() => setAskDelete(true)} className="btn-outline ml-auto min-h-10 py-2 text-sm text-coral-ink">
+            {busy === "delete" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {busy === "delete" ? "A apagar…" : `Apagar selecionados (${selected.length})`}
           </button>
+          <button disabled={busy !== null || selected.length === 0} onClick={() => confirm(selected)} className="btn-primary min-h-10 py-2 text-sm">
+            {busy === "confirm" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {busy === "confirm" ? "A confirmar…" : `Confirmar selecionados (${selected.length})`}
+          </button>
+        </div>
+      )}
+      {askDelete && (
+        <div role="alertdialog" aria-label="Confirmar apagar" className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-coral/50 bg-coral-tint/40 px-3 py-2 text-sm">
+          <span className="flex-1">Apagar {selected.length} documento{selected.length === 1 ? "" : "s"} e o{selected.length === 1 ? "" : "s"} ficheiro{selected.length === 1 ? "" : "s"}? Não dá para desfazer.</span>
+          <button type="button" onClick={() => remove(selected)} className="btn-primary min-h-9 py-1.5 text-sm">Sim, apagar</button>
+          <button type="button" onClick={() => setAskDelete(false)} className="btn-outline min-h-9 py-1.5 text-sm">Cancelar</button>
         </div>
       )}
       {msg && <p role="status" className={clsx("mb-3 rounded-xl px-3 py-2 text-sm", msg.ok ? "bg-olive-tint text-olive" : "bg-coral-tint text-coral-ink")}>{msg.text}</p>}

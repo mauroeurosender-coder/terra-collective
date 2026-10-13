@@ -247,6 +247,24 @@ export async function deleteDoc(id: string): Promise<Result> {
   return { ok: true, message: "Documento apagado." };
 }
 
+/** Deletes several documents and their files. Only unconfirmed ones: confirmed documents must be reopened first. */
+export async function deleteDocs(ids: string[]): Promise<Result> {
+  const sb = await owner();
+  const { data: docs } = await sb.from("accounting_docs").select("id, status").in("id", ids);
+  const drafts = (docs ?? []).filter((d) => d.status !== "confirmed").map((d) => d.id);
+  let ok = 0;
+  const failed: string[] = [];
+  for (const id of drafts) {
+    const r = await deleteDoc(id);
+    if (r.ok) ok++;
+    else failed.push(r.error);
+  }
+  revalidatePath("/admin/accounting");
+  const skipped = ids.length - drafts.length;
+  const msg = `${ok} documento${ok === 1 ? "" : "s"} apagado${ok === 1 ? "" : "s"}.${skipped ? ` ${skipped} confirmado${skipped === 1 ? "" : "s"} não apagado${skipped === 1 ? "" : "s"}.` : ""}`;
+  return failed.length ? { ok: false, error: `${msg} Erros: ${[...new Set(failed)].join(" ")}` } : { ok: true, message: msg };
+}
+
 export async function setObligationDone(key: string, done: boolean): Promise<Result> {
   const sb = await owner();
   const { data } = await sb.from("settings").select("value").eq("key", "tax_done").maybeSingle();
