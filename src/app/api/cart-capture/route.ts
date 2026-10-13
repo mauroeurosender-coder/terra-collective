@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isEmail } from "@/lib/server/persist";
 import { supabaseService } from "@/lib/supabase/server";
+import { limited } from "@/lib/server/rate-limit";
 
 const live = () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -9,6 +10,7 @@ export async function POST(req: Request) {
   const b = await req.json().catch(() => null);
   if (!b || typeof b.token !== "string" || b.token.length < 16 || !isEmail(b.email) || !Array.isArray(b.lines)) return new NextResponse(null, { status: 204 });
   if (!live()) return new NextResponse(null, { status: 204 });
+  if (limited(req, "cart", 30, 600, b.email)) return new NextResponse(null, { status: 204 });
   const lines = b.lines.slice(0, 30).map((l: Record<string, unknown>) => ({ variantId: l.variantId, slug: l.slug, name: l.name, variantLabel: l.variantLabel, image: l.image, price: l.price, shipping: l.shipping, quantity: l.quantity, maxQty: l.maxQty }));
   await supabaseService().from("carts").upsert(
     { token: b.token.slice(0, 64), email: b.email.toLowerCase(), lines, value: Number(b.value) || 0, country: String(b.country ?? "").slice(0, 2), locale: b.locale === "pt" ? "pt" : "en", updated_at: new Date().toISOString() },

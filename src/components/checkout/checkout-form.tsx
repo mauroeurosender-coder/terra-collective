@@ -17,7 +17,7 @@ import { formatEUR } from "@/lib/money";
 import { usePrefs } from "../providers";
 import { SardineLine } from "../illustrations";
 
-export function CheckoutForm() {
+export function CheckoutForm({ paymentsOpen = true, demo = true, etsyUrl = null }: { paymentsOpen?: boolean; demo?: boolean; etsyUrl?: string | null }) {
   const { locale, dict, country: prefCountry, setCountry, currency, settings } = usePrefs();
   const c = dict.checkout;
   const router = useRouter();
@@ -452,15 +452,23 @@ export function CheckoutForm() {
             <p role="alert" className="rounded-xl bg-coral-tint px-4 py-3 text-sm font-medium text-coral-ink">
               {serverError === "out_of_stock"
                 ? locale === "pt" ? "Uma das peças acabou de esgotar. Atualize o carrinho." : "One of your pieces just sold out. Please update your cart."
+                : serverError === "payments_unavailable"
+                ? locale === "pt" ? "Os pagamentos online ainda não estão ativos. Pode encomendar na nossa loja Etsy." : "Online payments aren’t open yet. You can order on our Etsy shop."
                 : locale === "pt" ? "Não foi possível concluir a encomenda. Tente novamente." : "We couldn’t place your order. Please try again."}
             </p>
           )}
 
           <div className="space-y-4">
-            <button type="submit" disabled={processing} className="btn-primary w-full py-4 text-base">
+            {!paymentsOpen && (
+              <p role="status" className="rounded-xl bg-azulejo-tint px-4 py-3 text-sm text-ink">
+                {locale === "pt" ? "Os pagamentos online abrem em breve. Até lá, estas peças estão à venda na nossa loja Etsy." : "Online payments open soon. Until then, these pieces are available in our Etsy shop."}
+                {etsyUrl && <> <a href={etsyUrl} target="_blank" rel="noopener noreferrer" className="font-semibold underline">{locale === "pt" ? "Ir para a Etsy →" : "Go to Etsy →"}</a></>}
+              </p>
+            )}
+            <button type="submit" disabled={processing || !paymentsOpen} className="btn-primary w-full py-4 text-base disabled:opacity-50">
               {processing ? c.processing : fmt(c.pay, { amount: money(totals.total) })}
             </button>
-            <p className="rounded-xl bg-mustard-tint px-4 py-2.5 text-center text-xs text-ink">{c.testMode}</p>
+            {paymentsOpen && demo && <p className="rounded-xl bg-mustard-tint px-4 py-2.5 text-center text-xs text-ink">{c.testMode}</p>}
             <ul className="grid grid-cols-3 gap-2 text-center text-xs text-ink-soft">
               <li className="flex flex-col items-center gap-1.5"><Lock className="h-4 w-4 text-azulejo" />{c.trust1}</li>
               <li className="flex flex-col items-center gap-1.5"><RotateCcw className="h-4 w-4 text-azulejo" />{c.trust2}</li>

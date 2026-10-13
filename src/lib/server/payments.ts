@@ -28,8 +28,15 @@ const stripeMethod: Record<PaymentMethod, string> = {
  * method isn't available on Stripe for the account, swap in ifthenpay or Eupago
  * here. Without keys it runs in demo mode so the full flow can be tested.
  */
+/**
+ * Real payments need Stripe. Demo payments (fake "succeeded") only run locally, or when
+ * ALLOW_DEMO_PAYMENTS=1 is set on purpose, so the live shop never records unpaid orders as paid.
+ */
+export const paymentsLive = () => Boolean(process.env.STRIPE_SECRET_KEY) || process.env.NODE_ENV !== "production" || process.env.ALLOW_DEMO_PAYMENTS === "1";
+
 export async function createPayment(opts: { orderNumber: string; amount: number; method: PaymentMethod; email: string; phone?: string }): Promise<PaymentResult> {
   const key = process.env.STRIPE_SECRET_KEY;
+  if (!key && !paymentsLive()) throw new Error("payments_unavailable");
   if (key) {
     const params = new URLSearchParams({
       amount: String(opts.amount),

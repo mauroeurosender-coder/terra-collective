@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { insertRow, isEmail } from "@/lib/server/persist";
+import { limited } from "@/lib/server/rate-limit";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   if (!isEmail(body.email)) return NextResponse.json({ error: "invalid_email" }, { status: 400 });
+  const tooMany = limited(req, "newsletter", 5, 600, body.email);
+  if (tooMany) return tooMany;
   const code = "WELCOME10";
   await insertRow("newsletter_subscribers", {
     email: body.email.toLowerCase(),

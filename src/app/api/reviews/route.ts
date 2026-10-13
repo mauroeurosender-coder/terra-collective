@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isEmail } from "@/lib/server/persist";
 import { supabaseService } from "@/lib/supabase/server";
+import { limited } from "@/lib/server/rate-limit";
 
 /** Storefront review submission. Reviews start as "pending" until approved in the admin. */
 export async function POST(req: Request) {
@@ -10,6 +11,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid" }, { status: 400 });
   }
   if (b.website) return NextResponse.json({ ok: true }); // honeypot
+  const tooMany = limited(req, "reviews", 5, 600, b.email);
+  if (tooMany) return tooMany;
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.info("[dev:review]", b.slug, rating);
     return NextResponse.json({ ok: true });

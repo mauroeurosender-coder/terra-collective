@@ -6,7 +6,8 @@ import { supabaseService } from "@/lib/supabase/server";
 import { invalidateCatalog } from "@/lib/data/source";
 import { variantLabel } from "@/lib/variants";
 import { methodsFor, validateCheckout, type CheckoutForm, type PaymentMethod } from "@/lib/checkout";
-import { createPayment } from "@/lib/server/payments";
+import { createPayment, paymentsLive } from "@/lib/server/payments";
+import { limited } from "@/lib/server/rate-limit";
 
 type Body = {
   lines: { variantId: string; quantity: number }[];
@@ -29,6 +30,11 @@ export async function POST(req: Request) {
   if (!body || !Array.isArray(body.lines) || body.lines.length === 0) {
     return NextResponse.json({ error: "empty_cart" }, { status: 400 });
   }
+
+  // No payment provider on the live site: never create an order (it would show as paid).
+  if (!paymentsLive()) return NextResponse.json({ error: "payments_unavailable" }, { status: 503 });
+  const tooMany = limited(req, "checkout", 10, 600);
+  if (tooMany) return tooMany;
 
   const errors = validateCheckout(body.form, body.payment);
   if (Object.keys(errors).length) return NextResponse.json({ error: "invalid", fields: errors }, { status: 422 });
