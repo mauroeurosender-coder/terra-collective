@@ -33,8 +33,8 @@ export type OrderRow = {
     variant_id: string | null;
     name: string;
     variant_label?: string | null;
-    variants: { cost: number | null; weight_g?: number | null } | null;
-    products: { slug: string; name: { en: string }; variants?: { cost: number | null; weight_g: number | null }[] } | null;
+    variants: { cost: number | null; weight_g?: number | null; options?: Record<string, string> | null } | null;
+    products: { slug: string; name: { en: string }; variants?: { cost: number | null; weight_g: number | null; options?: Record<string, string> | null }[] } | null;
   }[];
 };
 
@@ -45,17 +45,31 @@ export function setSize(label: string | null | undefined) {
   return n >= 1 && n <= 50 ? n : 1;
 }
 
+/** Set size from a variant’s option values ("set-of-2" → 2, "just-one" → 1); null when it has none. */
+function optionSize(opts: Record<string, string> | null | undefined): number | null {
+  const t = Object.values(opts ?? {}).join(" ").replace(/-/g, " ");
+  if (/just one|single piece/i.test(t)) return 1;
+  const n = setSize(t);
+  return n > 1 ? n : null;
+}
+
 /**
- * Cost and weight of one unit of an order line. Lines linked to a variant use it; lines that aren’t
- * (e.g. an Etsy "Set of 3" option the website doesn’t have) use the product’s per-piece values × the set size.
+ * Cost and weight of one unit of an order line. A linked variant’s own values win; anything missing
+ * (an Etsy "Set of 3" the website doesn’t have, or a new set-size variant without a cost yet) uses the
+ * product’s per-piece value × the set size.
  */
 export function lineUnit(i: OrderRow["order_items"][number]): { cost: number | null; weight: number | null } {
-  if (i.variants) return { cost: i.variants.cost, weight: i.variants.weight_g ?? null };
+  const own = i.variants;
+  if (own && own.cost != null && own.weight_g != null) return { cost: own.cost, weight: own.weight_g };
   const vs = i.products?.variants ?? [];
-  const k = setSize(i.variant_label);
-  const cost = vs.find((v) => v.cost != null)?.cost;
-  const weight = vs.find((v) => v.weight_g != null)?.weight_g;
-  return { cost: cost == null ? null : cost * k, weight: weight == null ? null : weight * k };
+  const k = own ? (optionSize(own.options) ?? setSize(i.variant_label)) : setSize(i.variant_label);
+  const per = (key: "cost" | "weight_g") => {
+    const v = vs.find((x) => x[key] != null);
+    return v ? (v[key] as number) / (optionSize(v.options) ?? 1) : null;
+  };
+  const cost = own?.cost ?? (per("cost") != null ? Math.round(per("cost")! * k) : null);
+  const weight = own?.weight_g ?? (per("weight_g") != null ? Math.round(per("weight_g")! * k) : null);
+  return { cost, weight };
 }
 
 export type OrderProfit = {
@@ -162,7 +176,7 @@ export type ProfitReport = {
 };
 
 const SELECT =
-  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g), products(slug, name, variants(cost, weight_g)))";
+  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g, options), products(slug, name, variants(cost, weight_g, options)))";
 
 export async function loadProfitOrders(sb: SupabaseClient, from: Date, to: Date) {
   const rows: OrderRow[] = [];

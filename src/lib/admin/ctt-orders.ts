@@ -26,7 +26,7 @@ export type CttOrder = {
 };
 
 const SELECT =
-  "id, number, source, status, created_at, country, email, shipping_address, order_items(quantity, unit_price, name, variant_label, product_id, variants(cost, weight_g), products(id, name, customs_desc, hs_code, variants(cost, weight_g)))";
+  "id, number, source, status, created_at, country, email, shipping_address, order_items(quantity, unit_price, name, variant_label, product_id, variants(cost, weight_g, options), products(id, name, customs_desc, hs_code, variants(cost, weight_g, options)))";
 
 export async function loadCttOrders(sb: SupabaseClient, ids?: string[]) {
   let q = sb.from("orders").select(SELECT).eq("test", false).order("created_at");
