@@ -7,6 +7,7 @@ import { invalidateCatalog } from "@/lib/data/source";
 import { extractInvoice, geminiConfigured } from "@/lib/server/gemini";
 import { checkVies } from "@/lib/server/vies";
 import { cleanVatNumber, purchaseRegime } from "@/lib/vat-regime";
+import { syncDriveQuietly, trashDriveFile } from "@/lib/server/gdrive";
 
 type Result = { ok: true; id?: string; message?: string } | { ok: false; error: string };
 const c = (euros: number) => Math.round((Number(euros) || 0) * 100);
@@ -54,7 +55,10 @@ export async function registerUpload(input: { path: string; fileName: string; mi
     .select("id")
     .single();
   if (error || !doc) return { ok: false, error: error?.message ?? "Não foi possível guardar." };
-  if (!geminiConfigured()) return { ok: true, id: doc.id, message: "Ficheiro guardado. Preencha os dados." };
+  if (!geminiConfigured()) {
+    await syncDriveQuietly([doc.id]);
+    return { ok: true, id: doc.id, message: "Ficheiro guardado. Preencha os dados." };
+  }
 
   try {
     const { data: file, error: dlErr } = await sb.storage.from("accounting").download(input.path);
@@ -98,8 +102,10 @@ export async function registerUpload(input: { path: string; fileName: string; mi
     }
     const country = (x.supplier_country || "PT").slice(0, 2).toUpperCase();
     if (input.direction === "purchase" && country !== "PT" && x.supplier_nif) await runVies(sb, doc.id, country, x.supplier_nif);
+    await syncDriveQuietly([doc.id]);
     return { ok: true, id: doc.id, message: "Documento lido automaticamente. Confirme os dados." };
   } catch (e) {
+    await syncDriveQuietly([doc.id]);
     return { ok: true, id: doc.id, message: `Ficheiro guardado, mas a leitura automática falhou (${(e as Error).message}). Preencha os dados.` };
   }
 }
@@ -153,6 +159,7 @@ export async function saveDoc(id: string, d: DocInput): Promise<Result> {
   if (d.lines.length) await sb.from("accounting_doc_lines").insert(d.lines.map((l, i) => ({ ...l, item_id: l.item_id ?? null, variant_id: l.item_id ? null : l.variant_id, doc_id: id, position: i })));
   revalidatePath(`/admin/accounting/docs/${id}`);
   revalidatePath("/admin/accounting");
+  await syncDriveQuietly([id]); // new date/supplier/number → rename or move the Drive copy
   return { ok: true, message: "Guardado." };
 }
 
@@ -234,12 +241,13 @@ export async function unconfirmDoc(id: string): Promise<Result> {
 
 export async function deleteDoc(id: string): Promise<Result> {
   const sb = await owner();
-  const { data: doc } = await sb.from("accounting_docs").select("file_path, stock_applied").eq("id", id).single();
+  const { data: doc } = await sb.from("accounting_docs").select("file_path, stock_applied, drive_file_id").eq("id", id).single();
   if (!doc) return { ok: false, error: "Documento não encontrado." };
   if (doc.stock_applied) {
     const r = await unconfirmDoc(id);
     if (!r.ok) return r;
   }
+  await trashDriveFile(doc.drive_file_id); // to the Drive bin (recoverable for 30 days)
   if (doc.file_path) await sb.storage.from("accounting").remove([doc.file_path]);
   const { error } = await sb.from("accounting_docs").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
@@ -274,4 +282,25 @@ export async function setObligationDone(key: string, done: boolean): Promise<Res
   await sb.from("settings").upsert({ key: "tax_done", value: cur, updated_at: new Date().toISOString() });
   revalidatePath("/admin/accounting");
   return { ok: true };
+}
+
+export async function driveSyncNow(): Promise<Result> {
+  await owner();
+  const { syncDrive } = await import("@/lib/server/gdrive");
+  try {
+    const r = await syncDrive();
+    revalidatePath("/admin/accounting");
+    if ("skipped" in r) return { ok: false, error: "Google Drive não está ligado." };
+    return r.errors.length ? { ok: false, error: r.result } : { ok: true, message: `Sincronizado: ${r.result}.` };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+export async function driveDisconnect(): Promise<Result> {
+  await owner();
+  const { disconnectDrive } = await import("@/lib/server/gdrive");
+  await disconnectDrive();
+  revalidatePath("/admin/accounting");
+  return { ok: true, message: "Google Drive desligado. Os ficheiros que já estão no Drive ficam lá." };
 }

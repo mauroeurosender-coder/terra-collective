@@ -9,15 +9,18 @@ import { Card, NotConnected, PageHeader, eur } from "@/components/admin/ui";
 import { AccountingUpload } from "@/components/admin/accounting-upload";
 import { TaxCalendar } from "@/components/admin/tax-calendar";
 import { AccountingDocsTable } from "@/components/admin/accounting-docs-table";
+import { DrivePanel } from "@/components/admin/drive-panel";
+import { driveFolderUrl, getDrive, googleConfigured } from "@/lib/server/gdrive";
 import { purchaseRegime, regimeLabel } from "@/lib/vat-regime";
 
 export const metadata = { title: "Contabilidade" };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export default async function AccountingPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function AccountingPage({ searchParams }: { searchParams: Promise<{ q?: string; drive?: string }> }) {
   await requireAdmin({ owner: true });
   if (!supabaseConfigured) return <><PageHeader title="Contabilidade" /><NotConnected /></>;
   const sp = await searchParams;
+  const [drive, driveUrl] = await Promise.all([getDrive(), driveFolderUrl()]);
   const q = quarterRange(sp.q ?? quarterOf(new Date()));
   const sb = await supabaseServer();
   const today = new Date().toISOString().slice(0, 10);
@@ -98,6 +101,10 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           {!geminiConfigured() && <p className="mt-3 text-xs text-ink-soft">Leitura automática desligada: adicione <code>GEMINI_API_KEY</code> nas variáveis de ambiente do Hostinger para os dados serem lidos dos PDFs.</p>}
         </Card>
       </div>
+
+      <Card title="Google Drive">
+        <DrivePanel configured={googleConfigured()} connected={Boolean(drive.refresh_token)} email={drive.email} lastSyncAt={drive.last_sync_at} lastResult={drive.last_sync_result} folderUrl={driveUrl} flash={sp.drive} />
+      </Card>
 
       <Card title={`Documentos · ${q.label}`} action={<span className="text-xs text-ink-soft">As faturas de venda estão no Moloni / e-Fatura</span>}>
         {!docs?.length ? (
