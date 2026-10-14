@@ -7,7 +7,8 @@ import { NewOrderForm, type PickerProduct } from "@/components/admin/new-order-f
 export const metadata = { title: "New order" };
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-export default async function NewOrderPage() {
+export default async function NewOrderPage({ searchParams }: { searchParams: Promise<{ channel?: string }> }) {
+  const { channel } = await searchParams;
   await requireAdmin();
   if (!supabaseConfigured) return <NotConnected />;
   const sb = await supabaseServer();
@@ -21,7 +22,7 @@ export default async function NewOrderPage() {
   return (
     <div className="mx-auto max-w-[1180px]">
       <PageHeader back={{ href: "/admin/orders", label: "Orders" }} title="New order" subtitle="For sales outside the website: markets, Instagram messages, bank transfers, wholesale." />
-      <NewOrderForm products={products} countries={countries.map((c) => ({ code: c.code, name: c.name.en }))} />
+      <NewOrderForm products={products} countries={countries.map((c) => ({ code: c.code, name: c.name.en }))} initialChannel={channel === "faire" ? "faire" : "manual"} />
     </div>
   );
 }

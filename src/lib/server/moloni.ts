@@ -180,6 +180,7 @@ type Order = {
   locale: string;
   country: string;
   nif: string | null;
+  vies_valid?: boolean | null;
   shipping_address: { firstName?: string; lastName?: string; company?: string; address1?: string; address2?: string; postal?: string; city?: string };
   subtotal: number;
   shipping: number;
@@ -210,16 +211,20 @@ async function countryId(iso: string) {
 async function ensureCustomer(o: Order, m: MoloniData) {
   const company_id = m.company_id!;
   const s = m.setup!;
-  const vat = o.nif && /^\d{9}$/.test(o.nif.replace(/\D/g, "")) ? o.nif.replace(/\D/g, "") : "999999990";
+  const a0 = o.shipping_address ?? {};
+  // Business customers abroad (e.g. Faire retailers) keep their EU VAT number with the country prefix.
+  const prefix = o.country === "GR" ? "EL" : o.country;
+  const foreignVat = o.country !== "PT" && o.nif && a0.company ? `${prefix}${o.nif.replace(/[^A-Za-z0-9]/g, "").replace(new RegExp(`^${prefix}`, "i"), "")}`.toUpperCase() : null;
+  const vat = foreignVat ?? (o.nif && /^\d{9}$/.test(o.nif.replace(/\D/g, "")) ? o.nif.replace(/\D/g, "") : "999999990");
   if (vat !== "999999990") {
     const found = await moloni<{ customer_id: number }[]>("customers/getByVat", { company_id, vat });
     if (found.length) return found[0].customer_id;
   }
-  const number = `${o.source === "etsy" ? "ETSY" : "WEB"}-${o.email.replace(/[^a-z0-9]/gi, "").slice(0, 20).toUpperCase()}`;
+  const number = `${o.source === "etsy" ? "ETSY" : o.source === "faire" ? "FAIRE" : "WEB"}-${(foreignVat ?? o.email).replace(/[^a-z0-9]/gi, "").slice(0, 20).toUpperCase()}`;
   const byNumber = await moloni<{ customer_id: number }[]>("customers/getByNumber", { company_id, number }).catch(() => []);
   if (byNumber.length) return byNumber[0].customer_id;
   const a = o.shipping_address ?? {};
-  const name = [a.firstName, a.lastName].filter(Boolean).join(" ") || a.company || "Consumidor final";
+  const name = a.company || [a.firstName, a.lastName].filter(Boolean).join(" ") || "Consumidor final";
   const r = await moloni<{ customer_id: number }>("customers/insert", {
     company_id,
     vat,
@@ -237,7 +242,7 @@ async function ensureCustomer(o: Order, m: MoloniData) {
     contact_name: "",
     contact_email: "",
     contact_phone: "",
-    notes: o.source === "etsy" ? "Cliente Etsy" : "Cliente loja online",
+    notes: o.source === "etsy" ? "Cliente Etsy" : o.source === "faire" ? "Revendedor (Faire)" : "Cliente loja online",
     salesman_id: 0,
     price_class_id: 0,
     maturity_date_id: s.maturity_date_id,
@@ -284,7 +289,9 @@ async function ensureProduct(ref: string, name: string, m: MoloniData, taxed: bo
 export async function createDraftInvoice(o: Order) {
   const m = await getMoloni();
   if (!m.company_id || !m.setup || !m.document_set_id) throw new Error("Moloni isn’t set up.");
-  const taxed = EU.has(o.country);
+  // Intra-EU B2B supply to a retailer with a VIES-valid VAT number: exempt (art. 14.º RITI, Moloni reason M16).
+  const intraEu = o.vies_valid === true && Boolean(o.nif) && EU.has(o.country) && o.country !== "PT";
+  const taxed = EU.has(o.country) && !intraEu;
   if (m.options?.oss && taxed && o.country !== "PT") throw new Error(`OSS: encomenda para ${o.country}. Crie esta fatura manualmente com a taxa de IVA do país de destino.`);
   const marketplaceTax = o.source === "etsy" ? o.vat : 0;
   const invoiceTotal = o.total - marketplaceTax;
@@ -297,7 +304,7 @@ export async function createDraftInvoice(o: Order) {
   const k = (itemsTarget + coupon) / listTotal;
   const discountPct = itemsTarget + coupon > 0 ? Math.max(0, Math.min(100, r6((coupon / (itemsTarget + coupon)) * 100))) : 0;
   const net = (gross: number) => (taxed ? r6(euro(gross) / 1.23) : r6(euro(gross)));
-  const lineTax = taxed ? { taxes: [{ tax_id: m.setup.tax23_id, value: 23, order: 1, cumulative: 0 }] } : { exemption_reason: "M05" };
+  const lineTax = taxed ? { taxes: [{ tax_id: m.setup.tax23_id, value: 23, order: 1, cumulative: 0 }] } : { exemption_reason: intraEu ? "M16" : "M05" };
 
   const products: Record<string, unknown>[] = [];
   for (const it of o.order_items) {
@@ -327,11 +334,11 @@ export async function createDraftInvoice(o: Order) {
     your_reference: o.number,
     our_reference: o.number,
     products,
-    payments: [{ payment_method_id: m.setup.payment_method_id, date, value: euro(invoiceTotal), notes: o.source === "etsy" ? "Pago via Etsy" : "Pago na loja online" }],
+    payments: [{ payment_method_id: m.setup.payment_method_id, date, value: euro(invoiceTotal), notes: o.source === "etsy" ? "Pago via Etsy" : o.source === "faire" ? "Pago via Faire" : "Pago na loja online" }],
     notes: [
       `Encomenda ${o.number}${o.source === "etsy" ? " (Etsy)" : ""}.`,
       o.tracking_number ? `Enviado por ${o.carrier ?? "transportadora"}, n.º de seguimento ${o.tracking_number}.` : "",
-      !taxed ? "Exportação de bens — isento ao abrigo do artigo 14.º do CIVA." : "",
+      intraEu ? "Transmissão intracomunitária de bens — isento ao abrigo do artigo 14.º do RITI." : !taxed ? "Exportação de bens — isento ao abrigo do artigo 14.º do CIVA." : "",
       marketplaceTax ? `Imposto do país de destino (${euro(marketplaceTax).toFixed(2)} €) cobrado e entregue pela Etsy; não incluído nesta fatura.` : "",
     ]
       .filter(Boolean)
@@ -346,10 +353,10 @@ export async function invoicePendingOrders(limit = 20) {
   const sb = supabaseService();
   const m = await getMoloni();
   if (!m.company_id) return { created: 0, failed: 0, result: "not connected" };
-  const channels = [m.options!.channels.web && "web", m.options!.channels.web && "manual", m.options!.channels.etsy && "etsy"].filter(Boolean) as string[];
+  const channels = [m.options!.channels.web && "web", m.options!.channels.web && "manual", m.options!.channels.web && "faire", m.options!.channels.etsy && "etsy"].filter(Boolean) as string[];
   const { data: orders } = await sb
     .from("orders")
-    .select("id, number, source, status, email, locale, country, nif, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, shipped_at, carrier, tracking_number, order_items(name, sku, variant_label, unit_price, quantity)")
+    .select("id, number, source, status, email, locale, country, nif, vies_valid, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, shipped_at, carrier, tracking_number, order_items(name, sku, variant_label, unit_price, quantity)")
     .in("status", ["shipped", "delivered"])
     .in("source", channels)
     .eq("test", false)
@@ -387,7 +394,7 @@ export async function retryInvoice(orderId: string) {
   await sb.from("orders").update({ invoice_status: null, invoice_error: null }).eq("id", orderId);
   const { data: full } = await sb
     .from("orders")
-    .select("id, number, source, status, email, locale, country, nif, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, shipped_at, carrier, tracking_number, order_items(name, sku, variant_label, unit_price, quantity)")
+    .select("id, number, source, status, email, locale, country, nif, vies_valid, shipping_address, subtotal, shipping, gift_wrap, discount_amount, vat, total, created_at, paid_at, shipped_at, carrier, tracking_number, order_items(name, sku, variant_label, unit_price, quantity)")
     .eq("id", orderId)
     .single();
   await sb.from("orders").update({ invoice_status: "pending", invoice_attempted_at: new Date().toISOString() }).eq("id", orderId);

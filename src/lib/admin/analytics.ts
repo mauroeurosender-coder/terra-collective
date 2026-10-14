@@ -49,7 +49,7 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
   ]);
   const events = (evs ?? []) as Ev[];
   // Visits are only measured on the website, so the funnel and conversion use website orders only.
-  const webOrders = (orders ?? []).filter((o: { source: string }) => o.source !== "etsy");
+  const webOrders = (orders ?? []).filter((o: { source: string }) => o.source === "web");
   const sid = (e: Ev) => (e.props?.sid as string) ?? `${e.path}-${Math.random()}`;
   const sessionsWith = (name: string) => new Set(events.filter((e) => e.name === name).map(sid)).size;
 
@@ -101,7 +101,8 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
       r.etsyOrders++;
       r.etsyRevenue += o.total - o.refunded_amount;
     } else {
-      r.orders++;
+      // Website orders count towards website conversion; Faire / manual sales only towards revenue.
+      if (o.source === "web") r.orders++;
       r.revenue += o.total - o.refunded_amount;
     }
   }

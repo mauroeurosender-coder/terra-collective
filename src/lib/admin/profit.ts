@@ -232,7 +232,7 @@ export async function getProfitReport(sb: SupabaseClient, range: Range): Promise
     if (r.estimated.shipping || r.estimated.fees) estimatedOrders++;
     const costs = r.cogs + r.shipping + r.packaging + r.fees + r.duties;
 
-    const name = o.source === "etsy" ? "Etsy" : o.source === "manual" ? "Manual" : "Website";
+    const name = o.source === "etsy" ? "Etsy" : o.source === "faire" ? "Faire" : o.source === "manual" ? "Manual" : "Website";
     const c = ch.get(name) ?? { channel: name, orders: 0, revenue: 0, costs: 0, profit: 0 };
     c.orders++;
     c.revenue += r.revenue;

@@ -79,7 +79,7 @@ async function candidates(now: number): Promise<Candidate[]> {
 
   // Abandoned carts (last 10 days, not recovered, no order from that email since)
   const { data: carts } = await sb.from("carts").select("id, email, lines, locale, token, updated_at").is("recovered_order_id", null).not("email", "is", null).gt("updated_at", since(10)).lt("updated_at", new Date(now - H / 2).toISOString());
-  const { data: recentOrders } = await sb.from("orders").select("id, email, created_at, customer_id, locale, number, shipping_address, source, status, test, order_items(name, quantity, products(slug))").neq("source", "etsy").eq("test", false).gt("created_at", since(200));
+  const { data: recentOrders } = await sb.from("orders").select("id, email, created_at, customer_id, locale, number, shipping_address, source, status, test, order_items(name, quantity, products(slug))").in("source", ["web", "manual"]).eq("test", false).gt("created_at", since(200));
   const orderedAfter = (email: string, t: number) => (recentOrders ?? []).some((o) => o.email?.toLowerCase() === email.toLowerCase() && new Date(o.created_at).getTime() >= t);
   for (const c of carts ?? []) {
     const t = new Date(c.updated_at).getTime();

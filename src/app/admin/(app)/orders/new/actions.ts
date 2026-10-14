@@ -5,6 +5,8 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseService } from "@/lib/supabase/server";
 import { invalidateCatalog } from "@/lib/data/source";
 import { getCountry } from "@/lib/geo";
+import { EU_COUNTRIES, cleanVatNumber } from "@/lib/vat-regime";
+import { checkVies } from "@/lib/server/vies";
 
 export type ManualOrderInput = {
   email: string;
@@ -26,6 +28,11 @@ export type ManualOrderInput = {
   giftMessage: string;
   note: string;
   test: boolean;
+  /** "manual" = market, DM, transfer… · "faire" = B2B wholesale order placed on Faire */
+  channel: "manual" | "faire";
+  company: string;
+  faireOrder: string;
+  commissionPct: number;
 };
 
 type Result = { ok: true; id: string; number: string } | { ok: false; error: string };
@@ -35,7 +42,9 @@ export async function createManualOrder(f: ManualOrderInput): Promise<Result> {
   const session = await requireAdmin();
   const lines = f.lines.filter((l) => l.variantId && l.quantity > 0);
   if (!lines.length) return { ok: false, error: "Add at least one product." };
-  if (!f.firstName.trim()) return { ok: false, error: "Add the customer’s first name." };
+  const faire = f.channel === "faire";
+  if (faire && !f.company.trim()) return { ok: false, error: "Add the retailer’s company name." };
+  if (!faire && !f.firstName.trim()) return { ok: false, error: "Add the customer’s first name." };
   const email = f.noEmail ? `no-email-${Date.now().toString(36)}@orders.local` : f.email.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, error: "Enter a valid email, or tick “No email”." };
 
@@ -57,7 +66,13 @@ export async function createManualOrder(f: ManualOrderInput): Promise<Result> {
   const shipping = Math.max(0, Math.round(f.shipping));
   const total = subtotal - discount + shipping;
   const c = getCountry(f.country);
-  const vatRate = c.zone === "PT" || c.zone === "EU" ? c.vat : 0;
+  // B2B to another EU country with a VIES-valid VAT number = intra-EU supply, no Portuguese VAT (art. 14.º RITI).
+  // Otherwise: Portugal / EU without a valid number → 23% PT VAT included; outside the EU → export, no VAT.
+  const euOther = (EU_COUNTRIES as readonly string[]).includes(f.country) && f.country !== "PT";
+  const vatNumber = cleanVatNumber(f.nif, f.country);
+  const vies = faire && euOther && vatNumber ? await checkVies(f.country, vatNumber) : null;
+  const intraEu = faire && euOther && vies?.valid === true;
+  const vatRate = intraEu ? 0 : faire ? (c.zone === "PT" || c.zone === "EU" ? 0.23 : 0) : c.zone === "PT" || c.zone === "EU" ? c.vat : 0;
   const vat = Math.round(total - total / (1 + vatRate));
 
   const { data, error: e2 } = await sb.rpc("place_order", {
@@ -66,8 +81,8 @@ export async function createManualOrder(f: ManualOrderInput): Promise<Result> {
       email,
       locale: f.locale,
       country: f.country,
-      address: { country: f.country, firstName: f.firstName.trim(), lastName: f.lastName.trim(), address1: f.address1.trim(), address2: "", postal: f.postal.trim(), city: f.city.trim(), state: "", phone: f.phone.trim(), company: "" },
-      nif: f.nif.trim(),
+      address: { country: f.country, firstName: f.firstName.trim(), lastName: f.lastName.trim(), address1: f.address1.trim(), address2: "", postal: f.postal.trim(), city: f.city.trim(), state: "", phone: f.phone.trim(), company: f.company.trim() },
+      nif: (faire ? vatNumber : f.nif.trim()) ?? "",
       marketing: false,
       subtotal,
       shipping,
@@ -78,15 +93,26 @@ export async function createManualOrder(f: ManualOrderInput): Promise<Result> {
       discount_amount: discount,
       vat,
       total,
-      payment_method: f.paymentMethod,
-      payment_ref: `manual-${session.email}`,
+      payment_method: faire ? "faire" : f.paymentMethod,
+      payment_ref: faire && f.faireOrder.trim() ? `faire-${f.faireOrder.trim()}` : `manual-${session.email}`,
       items,
     },
   });
   if (e2) return { ok: false, error: /out_of_stock/.test(e2.message) ? "Not enough stock for one of the products." : e2.message };
   const order = data as { id: string; number: string };
-  await sb.from("orders").update({ source: "manual", ...(f.test ? { test: true } : {}) }).eq("id", order.id);
-  await sb.from("order_events").insert({ order_id: order.id, kind: "note", body: `Created manually by ${session.name}${f.note.trim() ? `: ${f.note.trim().slice(0, 1000)}` : ""}`, author: session.mode === "live" ? session.userId : null });
+  const commission = faire ? Math.round(((subtotal - discount) * Math.min(100, Math.max(0, f.commissionPct))) / 100) : null;
+  await sb
+    .from("orders")
+    .update({
+      source: faire ? "faire" : "manual",
+      ...(faire ? { external_id: f.faireOrder.trim() || null, fees_cost: commission, vies_valid: vies?.valid ?? null } : {}),
+      ...(f.test ? { test: true } : {}),
+    })
+    .eq("id", order.id);
+  const how = faire
+    ? `Faire order${f.faireOrder.trim() ? ` ${f.faireOrder.trim()}` : ""} entered by ${session.name}. Commission ${f.commissionPct}%.${euOther ? (intraEu ? ` VIES: VAT number valid${vies?.name ? ` (${vies.name})` : ""}, intra-EU supply without VAT.` : vies?.valid === false ? " VIES: VAT number INVALID, Portuguese VAT applied." : vatNumber ? " VIES unavailable now, Portuguese VAT applied: check the number again before invoicing." : " No VAT number, Portuguese VAT applied.") : ""}`
+    : `Created manually by ${session.name}`;
+  await sb.from("order_events").insert({ order_id: order.id, kind: "note", body: `${how}${f.note.trim() ? ` ${f.note.trim().slice(0, 1000)}` : ""}`, author: session.mode === "live" ? session.userId : null });
   invalidateCatalog();
   revalidatePath("/admin/orders");
   revalidatePath("/admin");

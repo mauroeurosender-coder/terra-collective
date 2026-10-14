@@ -113,7 +113,7 @@ export function CttExport({ orders }: { orders: CttOrder[] }) {
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">
                     <Link href={`/admin/orders/${o.id}`} className="hover:text-azulejo">{o.number}</Link> · {flag(o.country)} {o.name}
-                    <span className="ml-2 text-xs text-ink-soft">{o.source === "etsy" ? "Etsy" : "Website"} · {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
+                    <span className="ml-2 text-xs text-ink-soft">{o.source === "etsy" ? "Etsy" : o.source === "faire" ? "Faire" : o.source === "manual" ? "Direct" : "Website"} · {new Date(o.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>
                   </p>
                   <p className="text-sm text-ink-soft">{[o.address, o.postal, o.city, o.region, o.country].filter(Boolean).join(", ")}</p>
                 </div>

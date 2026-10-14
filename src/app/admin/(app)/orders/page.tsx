@@ -58,7 +58,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="mx-auto max-w-[1280px]">
-      <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<><Link href="/admin/orders/ctt" className="btn-outline min-h-10 py-2 text-sm"><Truck className="h-4 w-4" /> CTT shipping</Link><Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link></>} />
+      <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<><Link href="/admin/orders/ctt" className="btn-outline min-h-10 py-2 text-sm"><Truck className="h-4 w-4" /> CTT shipping</Link><Link href="/admin/orders/new?channel=faire" className="btn-outline min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> Faire order</Link><Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link></>} />
       {drafts > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-line/70 bg-paper p-4">
           <p className="min-w-60 flex-1 text-sm text-ink-soft">{drafts} rascunho{drafts === 1 ? "" : "s"} de fatura no Moloni. Se já os reviu (ou não precisam de revisão), emita-os todos de uma vez, pela ordem das datas.</p>
@@ -142,6 +142,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                         <Link href={`/admin/orders/${o.id}`} className="after:absolute after:inset-0 focus-visible:outline-none">{o.number}</Link>
                         {o.test && <TestBadge />}
                         {o.source === "etsy" && <span className="ml-1.5 rounded bg-[#f1641e] px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-white">ETSY</span>}
+                        {o.source === "faire" && <span className="ml-1.5 rounded bg-ink px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-cream">FAIRE</span>}
                         {o.invoice_status === "issued" && <span title={o.invoice_ref ?? ""} className="ml-1.5 rounded bg-olive-tint px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-olive">FATURADA</span>}
                         {o.invoice_status === "draft" && <span className="ml-1.5 rounded bg-mustard-tint px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-ink">RASCUNHO</span>}
                         {o.invoice_status === "error" && <span className="ml-1.5 rounded bg-coral-tint px-1.5 py-0.5 align-middle text-[0.6rem] font-bold tracking-wider text-coral-ink">ERRO FATURA</span>}

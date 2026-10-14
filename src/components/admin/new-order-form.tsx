@@ -20,14 +20,16 @@ const payments = [
   ["other", "Other"],
 ];
 
-export function NewOrderForm({ products, countries }: { products: PickerProduct[]; countries: { code: string; name: string }[] }) {
+export function NewOrderForm({ products, countries, initialChannel = "manual" }: { products: PickerProduct[]; countries: { code: string; name: string }[]; initialChannel?: "manual" | "faire" }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState<Omit<ManualOrderInput, "lines" | "shipping" | "discount">>({
     email: "", noEmail: false, firstName: "", lastName: "", phone: "", country: "PT", address1: "", postal: "", city: "", nif: "", locale: "pt",
     paymentMethod: "mbway", paid: true, giftMessage: "", note: "", test: false,
+    channel: initialChannel, company: "", faireOrder: "", commissionPct: 15,
   });
+  const faire = f.channel === "faire";
   const [lines, setLines] = useState<{ productId: string; variantId: string; quantity: number; price: string }[]>([{ productId: "", variantId: "", quantity: 1, price: "" }]);
   const [shipping, setShipping] = useState("0");
   const [discount, setDiscount] = useState("0");
@@ -60,6 +62,21 @@ export function NewOrderForm({ products, countries }: { products: PickerProduct[
   return (
     <div className="grid gap-4 pb-10 lg:grid-cols-[1.6fr_1fr]">
       <div className="min-w-0 space-y-4">
+        <Card title="Channel">
+          <div role="radiogroup" aria-label="Channel" className="grid grid-cols-2 gap-1.5">
+            <button type="button" role="radio" aria-checked={!faire} onClick={() => set("channel", "manual")} className="chip min-h-10 text-sm">Direct sale (market, DM, transfer…)</button>
+            <button type="button" role="radio" aria-checked={faire} onClick={() => { set("channel", "faire"); set("locale", "en"); set("paid", true); }} className="chip min-h-10 text-sm">Faire (wholesale, B2B)</button>
+          </div>
+          {faire && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_8rem]">
+              <div><label htmlFor="no-fo" className="label">Faire order number</label><input id="no-fo" value={f.faireOrder} onChange={(e) => set("faireOrder", e.target.value)} placeholder="e.g. BNXYZ12345" className="field" /></div>
+              <div><label htmlFor="no-co" className="label">Retailer (company)</label><input id="no-co" value={f.company} onChange={(e) => set("company", e.target.value)} className="field" /></div>
+              <div><label htmlFor="no-cm" className="label">Faire commission %</label><input id="no-cm" type="number" min={0} max={100} step={0.5} value={f.commissionPct} onChange={(e) => set("commissionPct", Number(e.target.value))} className="field tabular-nums" /></div>
+              <p className="text-xs text-ink-soft sm:col-span-3">Enter wholesale prices. The commission counts as a cost in profit (usually 15%; higher on a retailer’s first order). EU retailers: the VAT number is checked with VIES; if valid, the sale is an intra-EU supply without Portuguese VAT.</p>
+            </div>
+          )}
+        </Card>
+
         <Card title="Products">
           <ul className="space-y-3">
             {lines.map((l, i) => {
@@ -96,10 +113,10 @@ export function NewOrderForm({ products, countries }: { products: PickerProduct[
             })}
           </ul>
           <button type="button" onClick={() => setLines([...lines, { productId: "", variantId: "", quantity: 1, price: "" }])} className="btn-outline mt-3 min-h-9 py-1.5 text-sm"><Plus className="h-4 w-4" /> Add product</button>
-          <p className="mt-2 text-xs text-ink-soft">Leave the price empty to use the catalogue price. Stock goes down when the order is created.</p>
+          <p className="mt-2 text-xs text-ink-soft">{faire ? "Type the wholesale price per unit (as on the Faire order)." : "Leave the price empty to use the catalogue price."} Stock goes down when the order is created.</p>
         </Card>
 
-        <Card title="Customer">
+        <Card title={faire ? "Retailer contact & shipping address" : "Customer"}>
           <div className="grid gap-3 sm:grid-cols-2">
             {field("firstName", "First name")}
             {field("lastName", "Last name")}
@@ -117,7 +134,7 @@ export function NewOrderForm({ products, countries }: { products: PickerProduct[
             <div className="sm:col-span-2">{field("address1", "Address (optional for pickup)")}</div>
             {field("postal", "Postal code")}
             {field("city", "City")}
-            {field("nif", "NIF (for the invoice, optional)")}
+            {field("nif", faire ? "VAT number (e.g. ESB12345678; checked with VIES)" : "NIF (for the invoice, optional)")}
             <div>
               <label htmlFor="no-locale" className="label">Emails in</label>
               <select id="no-locale" value={f.locale} onChange={(e) => set("locale", e.target.value as "en" | "pt")} className="field"><option value="pt">Português</option><option value="en">English</option></select>
@@ -129,6 +146,7 @@ export function NewOrderForm({ products, countries }: { products: PickerProduct[
       <div className="min-w-0 space-y-4">
         <Card title="Payment">
           <div className="space-y-3">
+            {faire ? <p className="rounded-xl bg-cream px-3 py-2 text-sm text-ink-soft">Paid through Faire. Faire pays you the order minus its commission.</p> : <>
             <div>
               <label htmlFor="no-pay" className="label">Payment method</label>
               <select id="no-pay" value={f.paymentMethod} onChange={(e) => set("paymentMethod", e.target.value)} className="field">
@@ -139,6 +157,7 @@ export function NewOrderForm({ products, countries }: { products: PickerProduct[
               <button type="button" role="radio" aria-checked={f.paid} onClick={() => set("paid", true)} className="chip min-h-10 text-sm">Paid</button>
               <button type="button" role="radio" aria-checked={!f.paid} onClick={() => set("paid", false)} className="chip min-h-10 text-sm">Awaiting payment</button>
             </div>
+            </>}
             <div className="grid grid-cols-2 gap-3">
               <div><label htmlFor="no-ship" className="label">Shipping €</label><input id="no-ship" inputMode="decimal" value={shipping} onChange={(e) => setShipping(e.target.value)} className="field tabular-nums" /></div>
               <div><label htmlFor="no-disc" className="label">Discount €</label><input id="no-disc" inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value)} className="field tabular-nums" /></div>
@@ -146,6 +165,7 @@ export function NewOrderForm({ products, countries }: { products: PickerProduct[
             <dl className="space-y-1 border-t border-line pt-3 text-sm">
               <div className="flex justify-between"><dt className="text-ink-soft">Subtotal</dt><dd className="tabular-nums">{eur(subtotal, 2)}</dd></div>
               {toCents(discount) > 0 && <div className="flex justify-between"><dt className="text-ink-soft">Discount</dt><dd className="tabular-nums">−{eur(toCents(discount), 2)}</dd></div>}
+              {faire && <div className="flex justify-between"><dt className="text-ink-soft">Faire commission ({f.commissionPct}%)</dt><dd className="tabular-nums">−{eur(Math.round((Math.max(0, subtotal - toCents(discount)) * f.commissionPct) / 100), 2)}</dd></div>}
               <div className="flex justify-between"><dt className="text-ink-soft">Shipping</dt><dd className="tabular-nums">{toCents(shipping) ? eur(toCents(shipping), 2) : "—"}</dd></div>
               <div className="flex justify-between pt-1 text-base font-semibold"><dt>Total</dt><dd className="tabular-nums">{eur(total, 2)}</dd></div>
             </dl>

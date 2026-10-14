@@ -70,6 +70,13 @@ export async function markShipped(orderId: string, carrier: string, tracking: st
     revalidatePath("/admin/orders");
     return { ok: true, message: "Marked as shipped and tracking sent to Etsy." };
   }
+  if (order.source === "faire") {
+    // Faire tells the retailer once the shipment is added on Faire; no email from us.
+    await event("note", `Add this tracking on Faire too (order ${order.external_id ?? ""}): ${carrier} · ${tracking}.`);
+    revalidatePath(`/admin/orders/${orderId}`);
+    revalidatePath("/admin/orders");
+    return { ok: true, message: "Marked as shipped. Now add the tracking on Faire so Faire notifies the retailer." };
+  }
   const mail = shippedEmail({ number: order.number, name: order.shipping_address?.firstName ?? "", locale: order.locale, carrier, tracking }, (await getSettings()).emails.shipped);
   const sent = await sendEmail(order.email, mail.subject, mail.html);
   await event("email", sent.sent ? `Shipping email sent to ${order.email}` : `Shipping email NOT sent (${sent.reason})`);

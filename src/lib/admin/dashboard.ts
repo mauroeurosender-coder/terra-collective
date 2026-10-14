@@ -82,7 +82,7 @@ function kpis(orders: AdminOrder[], visits: number): Kpis {
     aov: counted.length ? Math.round(revenue / counted.length) : 0,
     visits,
     // Only the website measures visits, so conversion compares website orders with website visits.
-    conversion: visits ? counted.filter((o) => o.source !== "etsy").length / visits : 0,
+    conversion: visits ? counted.filter((o) => (o.source ?? "web") === "web").length / visits : 0,
   };
 }
 
