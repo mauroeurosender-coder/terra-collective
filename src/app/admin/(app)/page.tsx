@@ -19,8 +19,11 @@ const countryName = (code: string) => countries.find((c) => c.code === code)?.na
 export default async function Dashboard({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const range = parseRange(sp);
-  const [d, session] = await Promise.all([getDashboard(range), getAdminSession()]);
-  const today = supabaseConfigured && session ? await getToday(await supabaseServer(), session.role === "owner") : null;
+  const session = await getAdminSession(); // cached: the admin frame already checked it
+  const [d, today] = await Promise.all([
+    getDashboard(range),
+    supabaseConfigured && session ? supabaseServer().then((sb) => getToday(sb, session.role === "owner")) : Promise.resolve(null),
+  ]);
   const period = range.key === "today" ? "yesterday" : "prior period";
   const lastDay = new Date(range.to.getTime() - 86_400_000);
   const hour = new Date().getHours();

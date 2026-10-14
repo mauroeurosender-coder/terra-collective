@@ -37,8 +37,9 @@ async function adminSession(req: NextRequest) {
       },
     },
   });
-  const { data } = await sb.auth.getUser();
-  if (!data.user && req.nextUrl.pathname !== "/admin/login" && !PUBLIC_ADMIN.test(req.nextUrl.pathname)) {
+  // Verifies the token locally (and refreshes it when expired) instead of a round trip to Supabase Auth.
+  const { data } = await sb.auth.getClaims();
+  if (!data?.claims?.sub && req.nextUrl.pathname !== "/admin/login" && !PUBLIC_ADMIN.test(req.nextUrl.pathname)) {
     return NextResponse.redirect(new URL("/admin/login", req.url));
   }
   return res;
