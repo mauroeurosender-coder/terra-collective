@@ -19,11 +19,15 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
         ],
       },
+      // Illustrations and photos in /public rarely change: let browsers keep them a day (and reuse them for a week while refreshing)
+      { source: "/:folder(products|lifestyle|journal|reviews|insta)/:path*", headers: [{ key: "Cache-Control", value: "public, max-age=86400, stale-while-revalidate=604800" }] },
       // The admin should never be cached or indexed
       { source: "/admin/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }, { key: "Cache-Control", value: "no-store" }] },
     ];
   },
   images: {
+    // Keep resized product photos for 31 days instead of 60 s, so the server doesn’t redo the same work.
+    minimumCacheTTL: 2678400,
     remotePatterns: [
       // Product photos & video uploaded from the admin
       { protocol: "https", hostname: supabaseHost, pathname: "/storage/v1/object/public/**" },

@@ -97,7 +97,7 @@ body {
 @utility headline {
   font-family: var(--font-serif);
   font-optical-sizing: auto;
-  font-variation-settings: "SOFT" 50, "WONK" 0;
+  font-variation-settings: "SOFT" 50;
   letter-spacing: -0.02em;
   line-height: 1.04;
   font-weight: 400;
