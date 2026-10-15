@@ -3,6 +3,8 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseServer } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/admin/ui";
 import { AccountingDocEditor } from "@/components/admin/accounting-doc-editor";
+import { DocPayment } from "@/components/admin/doc-payment";
+import { supplierDays } from "@/lib/admin/payables";
 import type { DocInput } from "../../actions";
 
 export const metadata = { title: "Documento" };
@@ -19,6 +21,8 @@ export default async function AccountingDocPage({ params }: { params: Promise<{ 
     sb.from("inventory_items").select("id, name").order("name"),
   ]);
   if (!doc) notFound();
+  const isPayable = doc.direction === "purchase" && doc.kind !== "credit_note";
+  const terms = isPayable ? await supplierDays(sb, doc.party_nif, doc.party_name) : null;
   const variants = (vs ?? [])
     .map((v: any) => ({ id: v.id, label: `${v.products.name.en}${Object.values(v.options ?? {}).length ? ` · ${Object.values(v.options).join(" · ")}` : ""} (${v.sku})` }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -44,6 +48,7 @@ export default async function AccountingDocPage({ params }: { params: Promise<{ 
   return (
     <div className="mx-auto max-w-[1400px]">
       <PageHeader back={{ href: "/admin/accounting", label: "Contabilidade" }} title={title} subtitle={doc.direction === "sale" ? "Documento de venda" : "Documento de compra"} />
+      {isPayable && <DocPayment id={doc.id} docDate={doc.date ?? new Date().toISOString().slice(0, 10)} paidOn={doc.paid_on ?? null} dueDate={doc.due_date ?? null} supplierDays={terms} supplierName={doc.party_name ?? null} />}
       <AccountingDocEditor
         id={doc.id}
         direction={doc.direction}

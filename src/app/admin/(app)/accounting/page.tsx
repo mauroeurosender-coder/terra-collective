@@ -10,6 +10,8 @@ import { AccountingUpload } from "@/components/admin/accounting-upload";
 import { TaxCalendar } from "@/components/admin/tax-calendar";
 import { AccountingDocsTable } from "@/components/admin/accounting-docs-table";
 import { DrivePanel } from "@/components/admin/drive-panel";
+import { PayablesCard } from "@/components/admin/payables-card";
+import { getPayables } from "@/lib/admin/payables";
 import { driveFolderUrl, getDrive, googleConfigured } from "@/lib/server/gdrive";
 import { purchaseRegime, regimeLabel } from "@/lib/vat-regime";
 
@@ -20,13 +22,13 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
   await requireAdmin({ owner: true });
   if (!supabaseConfigured) return <><PageHeader title="Contabilidade" /><NotConnected /></>;
   const sp = await searchParams;
-  const [drive, driveUrl] = await Promise.all([getDrive(), driveFolderUrl()]);
+  const [drive, driveUrl, payables] = await Promise.all([getDrive(), driveFolderUrl(), getPayables(await supabaseServer())]);
   const q = quarterRange(sp.q ?? quarterOf(new Date()));
   const sb = await supabaseServer();
   const today = new Date().toISOString().slice(0, 10);
   const [vat, { data: docs }, { data: doneRow }] = await Promise.all([
     vatSummary(sb, q.key),
-    sb.from("accounting_docs").select("id, direction, kind, status, party_name, party_country, number, date, net, vat, total, category, stock_applied, file_name, vies_valid").gte("date", q.from.toISOString().slice(0, 10)).lt("date", q.to.toISOString().slice(0, 10)).order("date", { ascending: false }),
+    sb.from("accounting_docs").select("id, direction, kind, status, party_name, party_country, number, date, net, vat, total, category, stock_applied, file_name, vies_valid, due_date, paid_on").gte("date", q.from.toISOString().slice(0, 10)).lt("date", q.to.toISOString().slice(0, 10)).order("date", { ascending: false }),
     sb.from("settings").select("value").eq("key", "tax_done").maybeSingle(),
   ]);
   const year = new Date().getFullYear();
@@ -102,6 +104,8 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
         </Card>
       </div>
 
+      <PayablesCard rows={payables} />
+
       <Card title="Google Drive">
         <DrivePanel configured={googleConfigured()} connected={Boolean(drive.refresh_token)} email={drive.email} lastSyncAt={drive.last_sync_at} lastResult={drive.last_sync_result} folderUrl={driveUrl} flash={sp.drive} />
       </Card>
@@ -126,6 +130,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
                 total: d.total,
                 confirmed: d.status === "confirmed",
                 stockApplied: d.stock_applied,
+                payment: d.direction !== "purchase" || d.kind === "credit_note" ? null : d.paid_on ? { paid: true, date: d.paid_on } : { paid: false, date: d.due_date ?? d.date },
               };
             })}
           />

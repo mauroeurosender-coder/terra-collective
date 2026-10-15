@@ -53,8 +53,8 @@ export async function summaryFiles(sb: SupabaseClient, key: string): Promise<{ n
       name: "Documentos.csv",
       mime: "text/csv",
       content: stringifyCsv([
-        ["Data", "Tipo", "Movimento", "Regime IVA", "Entidade", "NIF/IVA", "País", "VIES", "N.º documento", "Categoria", "Base", "IVA", "Total", "IVA dedutível", "Estado"],
-        ...((docs ?? []) as any[]).map((d) => [d.date, d.kind === "credit_note" ? "Nota de crédito" : d.kind === "invoice" ? "Fatura" : d.kind, d.direction === "purchase" ? "Compra" : "Venda", d.direction === "purchase" ? purchaseRegime(d.party_country, d.vat) : "", d.party_name, d.party_nif, d.party_country, d.vies_valid == null ? "" : d.vies_valid ? "Válido" : "Inválido", d.number, d.category, eur(d.net), eur(d.vat), eur(d.total), d.deductible ? "Sim" : "Não", d.status === "confirmed" ? "Confirmado" : "Rascunho"]),
+        ["Data", "Tipo", "Movimento", "Regime IVA", "Entidade", "NIF/IVA", "País", "VIES", "N.º documento", "Categoria", "Base", "IVA", "Total", "IVA dedutível", "Estado", "Vencimento", "Pago em"],
+        ...((docs ?? []) as any[]).map((d) => [d.date, d.kind === "credit_note" ? "Nota de crédito" : d.kind === "invoice" ? "Fatura" : d.kind, d.direction === "purchase" ? "Compra" : "Venda", d.direction === "purchase" ? purchaseRegime(d.party_country, d.vat) : "", d.party_name, d.party_nif, d.party_country, d.vies_valid == null ? "" : d.vies_valid ? "Válido" : "Inválido", d.number, d.category, eur(d.net), eur(d.vat), eur(d.total), d.deductible ? "Sim" : "Não", d.status === "confirmed" ? "Confirmado" : "Rascunho", d.due_date ?? "", d.paid_on ?? ""]),
       ]),
     },
     {

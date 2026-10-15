@@ -8,6 +8,7 @@ import { extractInvoice, geminiConfigured } from "@/lib/server/gemini";
 import { checkVies } from "@/lib/server/vies";
 import { cleanVatNumber, purchaseRegime } from "@/lib/vat-regime";
 import { syncDriveQuietly, trashDriveFile } from "@/lib/server/gdrive";
+import { paymentFor, supplierDays, supplierKey } from "@/lib/admin/payables";
 
 type Result = { ok: true; id?: string; message?: string } | { ok: false; error: string };
 const c = (euros: number) => Math.round((Number(euros) || 0) * 100);
@@ -68,16 +69,23 @@ export async function registerUpload(input: { path: string; fileName: string; mi
       sb.from("variants").select("id, sku, options, products!inner(name, status)").neq("products.status", "archived"),
       sb.from("inventory_items").select("id, keywords"),
     ]);
+    const docDate = /^\d{4}-\d{2}-\d{2}$/.test(x.date) ? x.date : new Date().toISOString().slice(0, 10);
+    const nif = cleanVatNumber(x.supplier_nif, x.supplier_country) || null;
+    const isPurchaseInvoice = input.direction === "purchase" && x.kind !== "credit_note";
+    const payment = isPurchaseInvoice
+      ? paymentFor(docDate, { paidOnIssue: Boolean(x.paid) || x.kind === "receipt", printedDue: x.due_date || null, supplierDays: await supplierDays(sb, nif, x.supplier_name) })
+      : { due_date: null, paid_on: null };
     const variants = (vs ?? []).map((v) => ({ id: v.id as string, sku: v.sku as string, label: `${(v.products as unknown as { name: { en: string } }).name.en} ${Object.values((v.options as Record<string, string>) ?? {}).join(" ")}` }));
     await sb
       .from("accounting_docs")
       .update({
         kind: x.kind === "credit_note" ? "credit_note" : input.kind,
         party_name: x.supplier_name || null,
-        party_nif: cleanVatNumber(x.supplier_nif, x.supplier_country) || null,
+        party_nif: nif,
         party_country: (x.supplier_country || "PT").slice(0, 2).toUpperCase(),
         number: x.number || null,
-        date: /^\d{4}-\d{2}-\d{2}$/.test(x.date) ? x.date : new Date().toISOString().slice(0, 10),
+        date: docDate,
+        ...payment,
         net: c(x.net),
         vat: c(x.vat),
         total: c(x.total),
@@ -304,3 +312,54 @@ export async function driveDisconnect(): Promise<Result> {
   revalidatePath("/admin/accounting");
   return { ok: true, message: "Google Drive desligado. Os ficheiros que já estão no Drive ficam lá." };
 }
+
+/* ------------------------------------------------------------------ Payments to suppliers */
+
+/**
+ * Payment status of one purchase invoice (allowed after confirming too). rememberDays saves the
+ * supplier’s terms so their next invoices get the right due date (0 = paid on receipt).
+ */
+export async function setDocPayment(id: string, p: { paidOn: string | null; dueDate: string | null; rememberDays?: number | null }): Promise<Result> {
+  const sb = await owner();
+  const valid = (d: string | null) => d === null || /^\d{4}-\d{2}-\d{2}$/.test(d);
+  if (!valid(p.paidOn) || !valid(p.dueDate)) return { ok: false, error: "Data inválida." };
+  const { data: doc } = await sb.from("accounting_docs").select("party_nif, party_name, date").eq("id", id).single();
+  if (!doc) return { ok: false, error: "Documento não encontrado." };
+  const { error } = await sb.from("accounting_docs").update({ paid_on: p.paidOn, due_date: p.dueDate }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  let note = "";
+  if (p.rememberDays != null && Number.isInteger(p.rememberDays) && p.rememberDays >= 0 && p.rememberDays <= 365) {
+    const key = supplierKey(doc.party_nif, doc.party_name);
+    if (key) {
+      await sb.from("supplier_terms").upsert({ key, name: doc.party_name, days: p.rememberDays, updated_at: new Date().toISOString() });
+      note = p.rememberDays === 0 ? " Este fornecedor fica como pago no momento." : ` Prazo de ${p.rememberDays} dias guardado para este fornecedor.`;
+    }
+  }
+  revalidatePath("/admin/accounting");
+  revalidatePath(`/admin/accounting/docs/${id}`);
+  revalidatePath("/admin");
+  return { ok: true, message: (p.paidOn ? "Marcada como paga." : "Marcada como por pagar.") + note };
+}
+
+/** Marks several purchase invoices as paid: on a date (default today), or "invoice" = each on its own invoice date. */
+export async function markDocsPaid(ids: string[], on?: string): Promise<Result> {
+  const sb = await owner();
+  let n = 0;
+  if (on === "invoice") {
+    const { data: docs } = await sb.from("accounting_docs").select("id, date").in("id", ids).eq("direction", "purchase").is("paid_on", null);
+    for (const d of docs ?? []) {
+      const { error } = await sb.from("accounting_docs").update({ paid_on: d.date ?? new Date().toISOString().slice(0, 10) }).eq("id", d.id);
+      if (error) return { ok: false, error: error.message };
+      n++;
+    }
+  } else {
+    const date = on && /^\d{4}-\d{2}-\d{2}$/.test(on) ? on : new Date().toISOString().slice(0, 10);
+    const { data, error } = await sb.from("accounting_docs").update({ paid_on: date }).in("id", ids).eq("direction", "purchase").is("paid_on", null).select("id");
+    if (error) return { ok: false, error: error.message };
+    n = data?.length ?? 0;
+  }
+  revalidatePath("/admin/accounting");
+  revalidatePath("/admin");
+  return { ok: true, message: `${n} fatura${n === 1 ? "" : "s"} marcada${n === 1 ? "" : "s"} como paga${n === 1 ? "" : "s"}.` };
+}
+

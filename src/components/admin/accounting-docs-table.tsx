@@ -21,7 +21,11 @@ export type DocRow = {
   total: number;
   confirmed: boolean;
   stockApplied: boolean;
+  /** Purchase invoices only: paid on, or due on. */
+  payment: { paid: boolean; date: string | null } | null;
 };
+const today = () => new Date().toISOString().slice(0, 10);
+const short = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString("pt-PT", { day: "numeric", month: "short" });
 
 export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
   const router = useRouter();
@@ -92,7 +96,7 @@ export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
       {drafts.length > 0 && <p className="mb-3 text-xs text-ink-soft">Confirme só os documentos que já reviu: ao confirmar, as compras de mercadoria entram em stock e atualizam os custos.</p>}
 
       <div className="-mx-2 overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[860px] text-sm">
           <thead className="text-left text-xs text-ink-soft">
             <tr>
               <th className="w-8 px-2 pb-2"><span className="sr-only">Selecionar</span></th>
@@ -104,6 +108,7 @@ export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
               <th className="px-2 pb-2 text-right font-medium">IVA</th>
               <th className="px-2 pb-2 text-right font-medium">Total</th>
               <th className="px-2 pb-2 font-medium">Estado</th>
+              <th className="px-2 pb-2 font-medium">Pagamento</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -130,6 +135,9 @@ export function AccountingDocsTable({ docs }: { docs: DocRow[] }) {
                   <span className={clsx("rounded-full px-2 py-0.5 text-xs font-semibold", d.confirmed ? "bg-olive-tint text-olive" : "bg-mustard-tint text-ink")}>
                     {d.confirmed ? (d.stockApplied ? "Confirmado · stock" : "Confirmado") : "Por confirmar"}
                   </span>
+                </td>
+                <td className="px-2 py-2.5 text-xs whitespace-nowrap">
+                  {!d.payment ? <span className="text-ink-soft">—</span> : d.payment.paid ? <span className="text-olive">✓ Paga {d.payment.date ? short(d.payment.date) : ""}</span> : d.payment.date && d.payment.date < today() ? <span className="font-semibold text-coral-ink">Em atraso</span> : <span>Vence {d.payment.date ? short(d.payment.date) : "—"}</span>}
                 </td>
               </tr>
             ))}

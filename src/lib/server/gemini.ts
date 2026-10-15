@@ -13,6 +13,8 @@ export type Extracted = {
   supplier_country: string;
   number: string;
   date: string; // YYYY-MM-DD
+  due_date?: string; // YYYY-MM-DD or ""
+  paid?: boolean; // fatura-recibo / already paid
   currency: string;
   net: number; // euros
   vat: number;
@@ -32,6 +34,8 @@ const schema = {
     supplier_country: { type: "STRING" },
     number: { type: "STRING" },
     date: { type: "STRING" },
+    due_date: { type: "STRING" },
+    paid: { type: "BOOLEAN" },
     currency: { type: "STRING" },
     net: { type: "NUMBER" },
     vat: { type: "NUMBER" },
@@ -51,6 +55,8 @@ Extrai os dados exatamente como aparecem. Regras:
 - supplier_*: o EMITENTE (fornecedor), não o cliente. supplier_nif = NIF/número de IVA do fornecedor sem espaços e sem o prefixo do país (ex: 501234567, B12345678, 0403170701); supplier_country = país do fornecedor em código ISO de 2 letras (ex: PT, ES, BE).
 - Se a fatura não tiver IVA por ser uma entrega intracomunitária (autoliquidação / reverse charge / art. 138.º da Diretiva IVA), vat = 0 e vat_rate = 0.
 - date: data de emissão no formato YYYY-MM-DD.
+- due_date: data de vencimento / pagamento até, se estiver no documento (YYYY-MM-DD); senão "".
+- paid: true se for fatura-recibo ou recibo, ou se o documento indicar que já está pago (ex.: "pago", "liquidado", talão de pagamento); senão false.
 - Valores em euros com ponto decimal. net = total sem IVA; vat = total de IVA; total = total com IVA.
 - vat_lines: um elemento por taxa de IVA do quadro-resumo (taxa em %, base tributável, valor do IVA). Isento = taxa 0.
 - lines: cada linha de artigo, com quantidade, preço unitário SEM IVA (depois de descontos) e taxa de IVA.
