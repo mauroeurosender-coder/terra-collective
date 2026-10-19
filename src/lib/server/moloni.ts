@@ -202,8 +202,19 @@ const r6 = (n: number) => Math.round(n * 1e6) / 1e6;
 let countryCache: Map<string, number> | null = null;
 async function countryId(iso: string) {
   if (!countryCache) {
-    const list = await moloni<{ country_id: number; iso_3166_1: string }[]>("countries/getAll", {});
-    countryCache = new Map(list.map((c) => [c.iso_3166_1.toUpperCase(), c.country_id]));
+    const list = await moloni<{ country_id: number; iso_3166_1: string; name: string }[]>("countries/getAll", {});
+    // Several Moloni entries share one ISO code (US: Estados Unidos / Alaska / Hawai; GB: Reino Unido / Irlanda do Norte).
+    // Always use the country itself, never one of its regions.
+    const regions = /^(alaska|hawai|hawaii|irlanda do norte|northern ireland|a[cç]ores|madeira|can[aá]rias|ceuta|melilla|guernsey|jersey|ilha de man|gibraltar)$/i;
+    countryCache = new Map();
+    for (const c of list) {
+      const iso = String(c.iso_3166_1).toUpperCase();
+      if (!countryCache.has(iso) && !regions.test(c.name.trim())) countryCache.set(iso, c.country_id);
+    }
+    for (const c of list) {
+      const iso = String(c.iso_3166_1).toUpperCase();
+      if (!countryCache.has(iso)) countryCache.set(iso, c.country_id); // only regions listed: take the first
+    }
   }
   return countryCache.get(iso.toUpperCase()) ?? countryCache.get("PT") ?? 1;
 }
