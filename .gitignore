@@ -46,3 +46,6 @@ next-env.d.ts
 
 # Contains CRON_SECRET
 /supabase/cron-schedule.sql
+
+# Local Claude Code skills (not part of the website)
+/.claude/

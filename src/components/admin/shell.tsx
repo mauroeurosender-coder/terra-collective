@@ -92,6 +92,7 @@ export function AdminShell({ user, demo, children }: { user: User; demo: boolean
 
   const footer = (
     <div className="border-t border-line p-4">
+      <p className="mb-2 text-[0.65rem] text-ink-soft/80" title="Version of the site that is running">Version {process.env.NEXT_PUBLIC_BUILD_ID ?? "dev"}</p>
       <a href="/en" target="_blank" rel="noopener noreferrer" className="mb-3 flex items-center gap-2 text-sm text-ink-soft hover:text-ink">
         <ExternalLink className="h-4 w-4" /> View store
       </a>
