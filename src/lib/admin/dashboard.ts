@@ -4,6 +4,7 @@ import { variantLabel } from "../variants";
 import { supabaseConfigured, supabaseServer } from "../supabase/server";
 import { demoData } from "./demo";
 import { bucketKey, buckets } from "./range";
+import { EU_COUNTRIES, regionOf, type Region } from "../continents";
 import type { AdminOrder, Dashboard, Kpis, Range } from "./types";
 
 const COUNTS = new Set(["paid", "packing", "shipped", "delivered", "refunded"]);
@@ -12,19 +13,31 @@ const net = (o: AdminOrder) => o.total - o.refunded - (o.marketplaceTax ?? 0);
 
 async function loadLive(range: Range) {
   const sb = await supabaseServer();
-  const [{ data: rows }, { count: visits }, { count: prevVisits }, { data: stock }] = await Promise.all([
+  const page = (from: number) =>
     sb
       .from("orders")
       .select("id, number, created_at, status, email, country, total, refunded_amount, payment_method, gift_message, shipping_address, test, source, vat, order_items(name, variant_label, unit_price, quantity, products(slug))")
       .gte("created_at", range.prevFrom.toISOString())
       .lt("created_at", range.to.toISOString())
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .range(from, from + 999);
+  // Supabase returns at most 1,000 rows per request: keep reading for long ranges.
+  const allOrders = async () => {
+    const out: unknown[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data } = await page(from);
+      out.push(...(data ?? []));
+      if (!data || data.length < 1000) return out;
+    }
+  };
+  const [rows, { count: visits }, { count: prevVisits }, { data: stock }] = await Promise.all([
+    allOrders(),
     sb.from("analytics_events").select("*", { count: "exact", head: true }).eq("name", "page_view").gte("created_at", range.from.toISOString()).lt("created_at", range.to.toISOString()),
     sb.from("analytics_events").select("*", { count: "exact", head: true }).eq("name", "page_view").gte("created_at", range.prevFrom.toISOString()).lt("created_at", range.prevTo.toISOString()),
     sb.from("variants").select("sku, stock, options, image_index, products!inner(slug, name, options, status)").lte("stock", 3).eq("products.status", "active").order("stock"),
   ]);
 
-  type Row = { id: string; number: string; created_at: string; status: AdminOrder["status"]; email: string; country: string; total: number; refunded_amount: number; payment_method: string; gift_message: string | null; test?: boolean; source?: string; vat?: number; shipping_address: { firstName?: string; lastName?: string }; order_items: { name: string; variant_label: string | null; unit_price: number; quantity: number; products: { slug: string } | null }[] };
+  type Row = { id: string; number: string; created_at: string; status: AdminOrder["status"]; email: string; country: string; total: number; refunded_amount: number; payment_method: string; gift_message: string | null; test?: boolean; source?: string; vat?: number; shipping_address: { firstName?: string; lastName?: string; postal?: string }; order_items: { name: string; variant_label: string | null; unit_price: number; quantity: number; products: { slug: string } | null }[] };
   const orders: AdminOrder[] = ((rows ?? []) as unknown as Row[]).map((o) => ({
     id: o.id,
     number: o.number,
@@ -33,6 +46,7 @@ async function loadLive(range: Range) {
     email: o.email,
     customerName: [o.shipping_address?.firstName, o.shipping_address?.lastName].filter(Boolean).join(" ") || o.email,
     country: o.country,
+    postal: o.shipping_address?.postal,
     total: o.total,
     refunded: o.refunded_amount,
     paymentMethod: o.payment_method,
@@ -52,6 +66,41 @@ async function loadLive(range: Range) {
     stock: v.stock,
   }));
   return { orders, visits: visits ?? 0, prevVisits: prevVisits ?? 0, lowStock };
+}
+
+/**
+ * OSS threshold: B2C sales shipped from Portugal to other EU countries, net of VAT, per
+ * calendar year. B2B orders with a valid VAT number (Faire, VIES) and test orders don't count.
+ */
+async function loadOss() {
+  const sb = await supabaseServer();
+  const year = new Date().getFullYear();
+  type Row = { created_at: string; country: string; total: number; refunded_amount: number; vat: number | null; source: string | null; vies_valid: boolean | null; shipping_address: { postal?: string } | null };
+  const rows: Row[] = [];
+  // Supabase returns at most 1,000 rows per request, so read the year in pages.
+  for (let from = 0; ; from += 1000) {
+    const { data } = await sb
+      .from("orders")
+      .select("created_at, country, total, refunded_amount, vat, source, vies_valid, shipping_address")
+      .in("status", [...COUNTS])
+      .in("country", [...EU_COUNTRIES].filter((c) => c !== "PT"))
+      .eq("test", false)
+      .gte("created_at", new Date(year - 1, 0, 1).toISOString())
+      .order("created_at")
+      .range(from, from + 999);
+    rows.push(...((data ?? []) as Row[]));
+    if (!data || data.length < 1000) break;
+  }
+  const oss = { year, current: 0, previous: 0, orders: 0 };
+  for (const o of rows) {
+    if (o.source === "faire" || o.vies_valid || regionOf(o.country, o.shipping_address?.postal) !== "EU") continue;
+    const amount = Math.max(0, o.total - o.refunded_amount - (o.vat ?? 0));
+    if (new Date(o.created_at).getFullYear() === year) {
+      oss.current += amount;
+      oss.orders += 1;
+    } else oss.previous += amount;
+  }
+  return oss;
 }
 
 function loadDemo(range: Range, products: Awaited<ReturnType<typeof loadCatalog>>["products"]) {
@@ -89,7 +138,7 @@ function kpis(orders: AdminOrder[], visits: number): Kpis {
 export async function getDashboard(range: Range): Promise<Dashboard> {
   const { products } = await loadCatalog();
   const live = supabaseConfigured;
-  const data = live ? await loadLive(range) : loadDemo(range, products);
+  const [data, oss] = live ? await Promise.all([loadLive(range), loadOss()]) : ([loadDemo(range, products), null] as const);
   const fromIso = range.from.toISOString();
   const current = data.orders.filter((o) => o.createdAt >= fromIso);
   const previous = data.orders.filter((o) => o.createdAt < fromIso);
@@ -106,11 +155,17 @@ export async function getDashboard(range: Range): Promise<Dashboard> {
 
   const countryMap = new Map<string, { country: string; revenue: number; orders: number }>();
   const productMap = new Map<string, { slug: string; name: string; image?: string; units: number; revenue: number }>();
+  const regionMap = new Map<Region, { region: Region; revenue: number; orders: number }>();
   for (const o of counted) {
     const c = countryMap.get(o.country) ?? { country: o.country, revenue: 0, orders: 0 };
     c.revenue += net(o);
     c.orders += 1;
     countryMap.set(o.country, c);
+    const region = regionOf(o.country, o.postal);
+    const r = regionMap.get(region) ?? { region, revenue: 0, orders: 0 };
+    r.revenue += net(o);
+    r.orders += 1;
+    regionMap.set(region, r);
     for (const i of o.items) {
       const p = productMap.get(i.slug) ?? { slug: i.slug, name: i.name, image: products.find((x) => x.slug === i.slug)?.images[0], units: 0, revenue: 0 };
       p.units += i.quantity;
@@ -125,6 +180,8 @@ export async function getDashboard(range: Range): Promise<Dashboard> {
     prev: kpis(previous, data.prevVisits),
     series: [...seriesMap.values()],
     byCountry: [...countryMap.values()].sort((a, b) => b.revenue - a.revenue),
+    byRegion: [...regionMap.values()].sort((a, b) => b.revenue - a.revenue),
+    oss,
     topProducts: [...productMap.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 6),
     lowStock: data.lowStock.slice(0, 8),
     recent: (live ? data.orders : demoData().orders).slice(0, 8),

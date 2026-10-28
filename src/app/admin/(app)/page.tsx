@@ -7,7 +7,8 @@ import { getAdminSession } from "@/lib/admin/auth";
 import { countries } from "@/lib/geo";
 import { RevenueChart } from "@/components/admin/revenue-chart";
 import { RangePicker } from "@/components/admin/range-picker";
-import { BarList, Card, Kpi, StatusPill, TestBadge, eur } from "@/components/admin/ui";
+import { Card, Kpi, StatusPill, TestBadge, eur } from "@/components/admin/ui";
+import { RegionTabs } from "@/components/admin/region-tabs";
 import { TodayPanel } from "@/components/admin/today-panel";
 import { getToday } from "@/lib/admin/today";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
@@ -54,15 +55,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <RevenueChart data={d.series} bucket={range.bucket} />
         </Card>
         <Card title="Revenue by country">
-          {d.byCountry.length ? (
-            <BarList
-              rows={d.byCountry.slice(0, 8).map((c) => ({ key: c.country, label: countryName(c.country), value: c.revenue, sub: `${c.orders}` }))}
-              format={(v) => eur(v)}
-            />
-          ) : (
-            <p className="text-sm text-ink-soft">No sales in this period yet.</p>
-          )}
-          <p className="mt-4 text-xs text-ink-soft">Small numbers are order counts.</p>
+          <RegionTabs
+            countries={d.byCountry.slice(0, 8).map((c) => ({ key: c.country, label: countryName(c.country), value: c.revenue, sub: `${c.orders}` }))}
+            regions={d.byRegion}
+            oss={d.oss}
+          />
         </Card>
       </div>
 

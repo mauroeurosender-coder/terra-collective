@@ -41,9 +41,19 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
   const sb = await supabaseServer();
   const from = range.from.toISOString();
   const to = range.to.toISOString();
+  // Supabase returns at most 1,000 rows per request, so long ranges are read in pages.
+  const orderPage = (off: number) => sb.from("orders").select("id, status, source, country, total, refunded_amount, order_items(quantity, unit_price, products(slug))").gte("created_at", from).lt("created_at", to).eq("test", false).in("status", ["paid", "packing", "shipped", "delivered"]).order("created_at").range(off, off + 999);
+  const allOrders = async () => {
+    const out: NonNullable<Awaited<ReturnType<typeof orderPage>>["data"]> = [];
+    for (let off = 0; ; off += 1000) {
+      const { data } = await orderPage(off);
+      out.push(...(data ?? []));
+      if (!data || data.length < 1000) return { data: out };
+    }
+  };
   const [{ data: evs }, { data: orders }, { data: prods }, { data: posts }] = await Promise.all([
     sb.from("analytics_events").select("name, props, path, referrer, utm, country").gte("created_at", from).lt("created_at", to).order("created_at", { ascending: false }).limit(LIMIT),
-    sb.from("orders").select("id, status, source, country, total, refunded_amount, order_items(quantity, unit_price, products(slug))").gte("created_at", from).lt("created_at", to).eq("test", false).in("status", ["paid", "packing", "shipped", "delivered"]),
+    allOrders(),
     sb.from("products").select("slug, name").eq("status", "active"),
     sb.from("journal_posts").select("slug, title").eq("status", "published"),
   ]);

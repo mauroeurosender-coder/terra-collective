@@ -1,3 +1,5 @@
+import type { Region } from "../continents";
+
 export type OrderStatus = "pending_payment" | "paid" | "packing" | "shipped" | "delivered" | "cancelled" | "refunded";
 
 export type AdminOrderItem = { slug: string; name: string; variantLabel: string; unitPrice: number; quantity: number; image?: string };
@@ -10,6 +12,7 @@ export type AdminOrder = {
   email: string;
   customerName: string;
   country: string;
+  postal?: string;
   total: number; // EUR cents
   refunded: number;
   paymentMethod: string;
@@ -33,6 +36,9 @@ export type Dashboard = {
   prev: Kpis;
   series: { t: string; revenue: number; orders: number }[];
   byCountry: { country: string; revenue: number; orders: number }[];
+  byRegion: { region: Region; revenue: number; orders: number }[];
+  /** EU distance sales to consumers outside Portugal, net of VAT, per calendar year (null in demo mode). */
+  oss: { year: number; current: number; previous: number; orders: number } | null;
   topProducts: { slug: string; name: string; image?: string; units: number; revenue: number }[];
   lowStock: { slug: string; name: string; variantLabel: string; sku: string; stock: number; image?: string }[];
   recent: AdminOrder[];
