@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, Download, ExternalLink, Loader2, RefreshCw, Unplug } from "lucide-react";
-import { etsyDisconnect, etsyImportListings, etsySaveOptions, etsySyncNow } from "@/app/admin/(app)/settings/actions";
+import { CheckCircle2, Download, ExternalLink, History, Loader2, RefreshCw, Unplug } from "lucide-react";
+import { etsyDisconnect, etsyImportListings, etsyImportMonth, etsySaveOptions, etsySyncNow } from "@/app/admin/(app)/settings/actions";
 import { useSave } from "./fields";
 import { Card } from "./ui";
 
@@ -53,6 +53,7 @@ export function EtsyPanel(p: Props) {
             <button disabled={s.pending} onClick={() => confirm(`Re-check every Etsy order since ${opts.importSince}? Existing orders are updated, not duplicated.`) && s.run(() => etsySyncNow(true), () => router.refresh())} className="btn-outline min-h-10 py-2 text-sm">Full re-sync</button>
             <button disabled={s.pending} onClick={() => confirm("Disconnect Etsy? Imported orders stay; new ones stop arriving.") && s.run(() => etsyDisconnect(), () => router.refresh())} className="btn min-h-10 px-4 py-2 text-sm text-coral-ink hover:bg-coral-tint"><Unplug className="h-4 w-4" /> Disconnect</button>
           </div>
+          <EtsyHistory onDone={() => router.refresh()} />
           <fieldset className="space-y-3 rounded-2xl border border-line p-4">
             <legend className="px-1 text-sm font-semibold">Options</legend>
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={opts.reduceStock} onChange={(e) => setOpts({ ...opts, reduceStock: e.target.checked })} className="mt-0.5 h-4 w-4 accent-azulejo" /> <span><b>Reduce website stock</b> when an Etsy order arrives (recommended if both shops sell the same pieces).</span></label>
@@ -83,5 +84,49 @@ export function EtsyPanel(p: Props) {
       )}
       <div className="mt-4"><s.Status /></div>
     </Card>
+  );
+}
+
+/** Imports past Etsy orders month by month, for yearly reports (no stock change, no invoices). */
+function EtsyHistory({ onDone }: { onDone: () => void }) {
+  const year = new Date().getFullYear();
+  const [from, setFrom] = useState(`${year}-01`);
+  const [running, setRunning] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const months = (() => {
+    const out: string[] = [];
+    const d = new Date(`${from}-01T00:00:00Z`);
+    const end = new Date();
+    while (d <= end) {
+      out.push(d.toISOString().slice(0, 7));
+      d.setUTCMonth(d.getUTCMonth() + 1);
+    }
+    return out;
+  })();
+  const run = async () => {
+    setRunning(true);
+    setLog([]);
+    for (const m of months) {
+      const r = await etsyImportMonth(m);
+      setLog((l) => [...l, r.ok ? r.message ?? m : `⚠ ${r.error}`]);
+    }
+    setRunning(false);
+    onDone();
+  };
+  return (
+    <fieldset className="space-y-3 rounded-2xl border border-line p-4">
+      <legend className="px-1 text-sm font-semibold">Order history</legend>
+      <p className="text-sm text-ink-soft">Bring in older Etsy orders so yearly reports (revenue per country, profit) are complete. They don’t change stock, don’t create Moloni invoices and never show as “to ship”. Orders already imported are skipped, so it’s safe to run again.</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label htmlFor="etsy-hist" className="label">Import from</label>
+          <input id="etsy-hist" type="month" value={from} max={new Date().toISOString().slice(0, 7)} onChange={(e) => setFrom(e.target.value)} disabled={running} className="field py-2 text-sm" />
+        </div>
+        <button type="button" disabled={running || !months.length} onClick={run} className="btn-outline min-h-10 py-2 text-sm">
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />} {running ? `Importing… ${log.length}/${months.length} months` : `Import ${months.length} month${months.length === 1 ? "" : "s"} of history`}
+        </button>
+      </div>
+      {log.length > 0 && <ul className="max-h-40 overflow-y-auto text-xs text-ink-soft tabular-nums">{log.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+    </fieldset>
   );
 }

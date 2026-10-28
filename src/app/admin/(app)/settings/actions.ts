@@ -169,3 +169,22 @@ export async function moloniDisconnect(): Promise<Result> {
   revalidatePath("/admin/settings");
   return { ok: true, message: "Moloni desligado. Os rascunhos já criados continuam no Moloni." };
 }
+
+/** Imports one month of past Etsy orders (YYYY-MM) for reports. Owner only; safe to repeat (no duplicates). */
+export async function etsyImportMonth(month: string): Promise<Result> {
+  const session = await requireAdmin();
+  if (session.role !== "owner") return { ok: false, error: "Only the owner can import history." };
+  const m = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!m) return { ok: false, error: "Invalid month." };
+  const from = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
+  const to = new Date(Date.UTC(Number(m[1]), Number(m[2]), 1));
+  const { syncEtsyOrders } = await import("@/lib/server/etsy");
+  try {
+    const r = await syncEtsyOrders({ history: { from, to } });
+    revalidatePath("/admin/orders");
+    revalidatePath("/admin/analytics");
+    return { ok: true, message: `${month}: ${r.created} imported${r.updated ? `, ${r.updated} updated` : ""}` };
+  } catch (e) {
+    return { ok: false, error: `${month}: ${(e as Error).message}` };
+  }
+}

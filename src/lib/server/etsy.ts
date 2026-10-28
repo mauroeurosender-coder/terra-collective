@@ -207,7 +207,12 @@ export function mapEtsyStatus(r: Receipt): OrderStatus {
   return "pending_payment";
 }
 
-export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } = {}) {
+/**
+ * opts.history = import past orders by creation date (e.g. one month of last year): no stock change,
+ * no effect on the regular sync’s bookmark, and old unshipped-on-Etsy orders count as delivered so they
+ * never show up as “to ship”. Moloni only invoices orders shipped after its start date, so none are invoiced.
+ */
+export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean; history?: { from: Date; to: Date } } = {}) {
   const sb = supabaseService();
   const cur = await getEtsy();
   if (!cur.shop_id) throw new Error("Etsy isn’t connected.");
@@ -242,12 +247,17 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
         quantity: t.quantity,
       };
     });
+  const hist = opts.history;
   for (let offset = 0; offset < 2000; offset += 100) {
     const page = await etsyFetch<{ count: number; results: Receipt[] }>(
-      `/application/shops/${cur.shop_id}/receipts?min_last_modified=${Math.floor(since.getTime() / 1000)}&limit=100&offset=${offset}&sort_on=updated&sort_order=asc`,
+      hist
+        ? `/application/shops/${cur.shop_id}/receipts?min_created=${Math.floor(hist.from.getTime() / 1000)}&max_created=${Math.floor(hist.to.getTime() / 1000) - 1}&limit=100&offset=${offset}&sort_on=created&sort_order=asc`
+        : `/application/shops/${cur.shop_id}/receipts?min_last_modified=${Math.floor(since.getTime() / 1000)}&limit=100&offset=${offset}&sort_on=updated&sort_order=asc`,
     );
     for (const r of page.results) {
-      const status = mapEtsyStatus(r);
+      let status = mapEtsyStatus(r);
+      // History: a paid order older than 3 weeks that was never marked shipped on Etsy was surely delivered.
+      if (hist && status === "paid" && Date.now() - r.create_timestamp * 1000 > 21 * 86_400_000) status = "delivered";
       const refunded = Math.min(cents(r.grandtotal), (r.refunds ?? []).reduce((n, x) => n + cents(x.amount), 0));
       const ship = r.shipments?.[r.shipments.length - 1];
       const { data: existing } = await sb.from("orders").select("id, status, external_status, tracking_number, refunded_amount, subtotal, shipping, discount_amount, vat, total").eq("source", "etsy").eq("external_id", String(r.receipt_id)).maybeSingle();
@@ -337,9 +347,9 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
       const items = buildItems(r, order.id);
       unmatched += items.filter((i) => !i.variant_id).length;
       await sb.from("order_items").insert(items);
-      const notes = [`Imported from Etsy (receipt ${r.receipt_id}, ${r.status}).`, r.message_from_buyer ? `Buyer’s note: ${r.message_from_buyer}` : ""].filter(Boolean).join(" ");
+      const notes = [`Imported from Etsy${hist ? " history" : ""} (receipt ${r.receipt_id}, ${r.status}).`, r.message_from_buyer ? `Buyer’s note: ${r.message_from_buyer}` : ""].filter(Boolean).join(" ");
       await sb.from("order_events").insert({ order_id: order.id, kind: "note", body: notes, created_at });
-      if (cur.options!.reduceStock && status !== "cancelled" && status !== "refunded") {
+      if (!hist && cur.options!.reduceStock && status !== "cancelled" && status !== "refunded") {
         for (const it of items) if (it.variant_id) await sb.rpc("decrement_stock", { p_variant: it.variant_id, p_qty: it.quantity });
       }
       created++;
@@ -348,7 +358,7 @@ export async function syncEtsyOrders(opts: { full?: boolean; relink?: boolean } 
   }
 
   const result = `${created} new, ${updated} updated${relinked ? `, ${relinked} linked to products` : ""}${unmatched ? `, ${unmatched} item${unmatched === 1 ? "" : "s"} not matched to a product` : ""}`;
-  await saveEtsy({ last_sync_at: startedAt, last_sync_result: result });
+  if (!hist) await saveEtsy({ last_sync_at: startedAt, last_sync_result: result });
   return { created, updated, unmatched, relinked, result };
 }
 
