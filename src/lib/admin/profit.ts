@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { mergeSettings, type ProfitSettings, type RateZone } from "../settings";
 import { rateFor } from "../shipping-rates";
 import type { Range } from "./types";
+import { store } from "../config";
+import { ossRate } from "../continents";
 
 // Countries CTT prices as "Europe" (EU + the rest of geographic Europe).
 const EUROPE_EXTRA = new Set(["GB", "CH", "NO", "IS", "LI", "AD", "MC", "SM", "VA", "AL", "BA", "ME", "MK", "RS", "XK", "MD", "UA", "BY", "GI", "FO", "GL"]);
@@ -27,6 +29,7 @@ export type OrderRow = {
   packaging_cost: number | null;
   fees_cost: number | null;
   duties_cost?: number | null;
+  invoice_attempted_at?: string | null;
   order_items: {
     quantity: number;
     unit_price: number;
@@ -91,13 +94,18 @@ export const rateZone = (country: string): RateZone => (country === "PT" ? "PT" 
 
 export { rateFor };
 
+/** Destination VAT rate when the order is (or will be) invoiced under the OSS. */
+export const ossOf = (o: Pick<OrderRow, "country" | "created_at" | "invoice_attempted_at">) =>
+  ossRate(o.country, o.invoice_attempted_at ?? o.created_at, store.oss.from);
+
 /** Profit for one order with the given default costs. All money in cents. */
 export function orderProfit(o: OrderRow, p: ProfitSettings): OrderProfit {
   const refundedShare = o.total ? Math.min(1, o.refunded_amount / o.total) : 0;
   const marketplaceTax = o.source === "etsy" ? o.vat : 0;
   const kept = Math.max(0, o.total - o.refunded_amount - marketplaceTax * (1 - refundedShare));
-  // VAT you owe the State: included in EU/PT sales; exports are exempt; Etsy’s own taxes are not yours.
-  const vatOwed = o.source === "etsy" ? (EU.has(o.country) ? Math.round((kept * 23) / 123) : 0) : Math.round(o.vat * (1 - refundedShare));
+  // VAT you owe the State: included in EU/PT sales (destination rate under OSS); exports are exempt; Etsy’s own taxes are not yours.
+  const rate = ossOf(o) ?? 23;
+  const vatOwed = o.source === "etsy" ? (EU.has(o.country) ? Math.round((kept * rate) / (100 + rate)) : 0) : Math.round(o.vat * (1 - refundedShare));
   const revenue = kept - vatOwed;
 
   const fullyRefunded = refundedShare >= 0.999;
@@ -176,7 +184,7 @@ export type ProfitReport = {
 };
 
 const SELECT =
-  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g, options), products(slug, name, variants(cost, weight_g, options)))";
+  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, invoice_attempted_at, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g, options), products(slug, name, variants(cost, weight_g, options)))";
 
 export async function loadProfitOrders(sb: SupabaseClient, from: Date, to: Date) {
   const rows: OrderRow[] = [];

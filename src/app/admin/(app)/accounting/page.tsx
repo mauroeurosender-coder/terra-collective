@@ -14,6 +14,7 @@ import { PayablesCard } from "@/components/admin/payables-card";
 import { getPayables } from "@/lib/admin/payables";
 import { driveFolderUrl, getDrive, googleConfigured } from "@/lib/server/gdrive";
 import { purchaseRegime, regimeLabel } from "@/lib/vat-regime";
+import { store } from "@/lib/config";
 
 export const metadata = { title: "Contabilidade" };
 
@@ -65,6 +66,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             <p className="text-xs font-semibold tracking-wider text-ink-soft uppercase">Vendas ({vat.sales.orders} encomendas)</p>
             <Row label="Base tributável a 23%" value={vat.sales.taxedBase} sub={`IVA ${eur(vat.sales.taxedVat, 2)}`} />
             <Row label="Exportações isentas (art. 14.º CIVA)" value={vat.sales.exemptExports} />
+            {vat.oss.orders > 0 && <Row label="Vendas UE em OSS (declaradas à parte, ver abaixo)" value={vat.oss.base} sub={`IVA OSS ${eur(vat.oss.vat, 2)}`} />}
             {vat.sales.creditNotesBase > 0 && <Row label="Notas de crédito emitidas" value={-vat.sales.creditNotesBase} sub={`IVA −${eur(vat.sales.creditNotesVat, 2)}`} />}
             <p className="pt-3 text-xs font-semibold tracking-wider text-ink-soft uppercase">Compras ({vat.purchases.docs} documentos confirmados)</p>
             {vat.purchases.goods.map((g) => <Row key={g.rate} label={`Existências a ${g.rate}%`} value={g.base} sub={`IVA ${eur(g.vat, 2)}`} />)}
@@ -80,7 +82,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             {vat.imports.docs > 0 && <p className="mt-2 rounded-xl bg-cream px-3 py-2 text-sm">{vat.imports.docs} compra{vat.imports.docs === 1 ? "" : "s"} fora da UE: o IVA de importação deduz-se pelo documento da alfândega/transportadora, que também deve carregar.</p>}
           </dl>
           {vat.purchases.drafts > 0 && <p className="mt-3 rounded-xl bg-mustard-tint px-3 py-2 text-sm">{vat.purchases.drafts} documento{vat.purchases.drafts === 1 ? "" : "s"} por confirmar não {vat.purchases.drafts === 1 ? "está" : "estão"} incluído{vat.purchases.drafts === 1 ? "" : "s"}.</p>}
-          <p className="mt-3 text-xs text-ink-soft">Vendas a partir das encomendas (site, Etsy e manuais), sem o imposto cobrado pela Etsy. Taxas de IVA de outros países (OSS) e autoliquidação de serviços estrangeiros (ex.: taxas Etsy) não estão incluídas: o contabilista trata.</p>
+          <p className="mt-3 text-xs text-ink-soft">Vendas a partir das encomendas (site, Etsy e manuais), sem o imposto cobrado pela Etsy. O IVA OSS não entra nesta declaração. A autoliquidação de serviços estrangeiros (ex.: taxas Etsy) não estão incluídas: o contabilista trata.</p>
         </Card>
 
         <Card title="Rendimentos e Segurança Social (estimativa)">
@@ -93,6 +95,29 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           <p className="mt-4 text-xs text-ink-soft">O imposto final de IRS depende do seu agregado e de outros rendimentos. Isenções do 1.º ano de atividade e outras regras não estão consideradas.</p>
         </Card>
       </div>
+
+      {(vat.oss.orders > 0 || (store.oss.from && q.to.toISOString().slice(0, 10) > store.oss.from)) && (
+        <Card title={`Declaração OSS · Regime União · ${q.label}`} action={<span className="text-xs text-ink-soft">{store.oss.number}</span>}>
+          {vat.oss.orders ? (
+            <div className="-mx-2 overflow-x-auto">
+              <table className="w-full min-w-[460px] text-sm tabular-nums">
+                <thead className="text-left text-xs text-ink-soft">
+                  <tr><th className="px-2 pb-2 font-medium">País de consumo</th><th className="px-2 pb-2 text-right font-medium">Taxa</th><th className="px-2 pb-2 text-right font-medium">Encomendas</th><th className="px-2 pb-2 text-right font-medium">Valor tributável</th><th className="px-2 pb-2 text-right font-medium">IVA</th></tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {vat.oss.countries.map((c) => (
+                    <tr key={c.country}><td className="px-2 py-2">{c.country}</td><td className="px-2 py-2 text-right">{String(c.rate).replace(".", ",")}%</td><td className="px-2 py-2 text-right">{c.orders}</td><td className="px-2 py-2 text-right">{eur(c.base, 2)}</td><td className="px-2 py-2 text-right">{eur(c.vat, 2)}</td></tr>
+                  ))}
+                  <tr className="font-semibold"><td className="px-2 py-2" colSpan={2}>Total a pagar no OSS</td><td className="px-2 py-2 text-right">{vat.oss.orders}</td><td className="px-2 py-2 text-right">{eur(vat.oss.base, 2)}</td><td className="px-2 py-2 text-right">{eur(vat.oss.vat, 2)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-soft">Ainda sem vendas OSS neste trimestre. A declaração tem de ser entregue na mesma (a zeros).</p>
+          )}
+          <p className="mt-3 text-xs text-ink-soft">Vendas a particulares noutros países da UE faturadas desde {store.oss.from?.split("-").reverse().join("/")}, com o IVA do país do comprador. Entregar e pagar até ao fim do mês seguinte ao trimestre em Portal das Finanças → IVA → Balcão Único (OSS). Confira com as faturas do Moloni antes de submeter.</p>
+        </Card>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1.1fr]">
         <Card title="Prazos fiscais">

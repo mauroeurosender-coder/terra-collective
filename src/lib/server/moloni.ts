@@ -1,6 +1,7 @@
 import "server-only";
 import { supabaseService } from "../supabase/server";
 import { store } from "../config";
+import { outsideEuVat } from "../continents";
 
 /**
  * Moloni (certified Portuguese invoicing) — creates DRAFT invoice-receipts for paid orders.
@@ -24,8 +25,9 @@ export type MoloniData = {
   company_name?: string;
   document_set_id?: number;
   document_set_name?: string;
-  setup?: { tax23_id: number; unit_id: number; category_id: number; maturity_date_id: number; payment_method_id: number; language_pt: number; language_en: number };
-  options?: { startFrom: string; channels: { web: boolean; etsy: boolean }; oss: boolean };
+  setup?: { tax23_id: number; unit_id: number; category_id: number; maturity_date_id: number; payment_method_id: number; language_pt: number; language_en: number; ossTaxes?: Record<string, { tax_id: number; value: number }> };
+  /** oss: registered in the OSS (Regime União); ossFrom: first invoice date (YYYY-MM-DD) with destination VAT. */
+  options?: { startFrom: string; channels: { web: boolean; etsy: boolean }; oss: boolean; ossFrom?: string; ossNumber?: string };
   last_run_at?: string;
   last_run_result?: string;
 };
@@ -294,7 +296,8 @@ async function ensureProduct(ref: string, name: string, m: MoloniData, taxed: bo
 
 /**
  * Builds the invoice so it matches what the shop actually charged:
- * - PT and EU (no OSS): 23% VAT included in the prices.
+ * - PT, and EU before OSS: 23% VAT included in the prices.
+ * - EU consumers once OSS is on: the destination country’s VAT, included in the same gross prices.
  * - Outside the EU: VAT-exempt export (M05), and without any tax a marketplace (Etsy) collected.
  */
 export async function createDraftInvoice(o: Order) {
@@ -302,8 +305,14 @@ export async function createDraftInvoice(o: Order) {
   if (!m.company_id || !m.setup || !m.document_set_id) throw new Error("Moloni isn’t set up.");
   // Intra-EU B2B supply to a retailer with a VIES-valid VAT number: exempt (art. 14.º RITI, Moloni reason M16).
   const intraEu = o.vies_valid === true && Boolean(o.nif) && EU.has(o.country) && o.country !== "PT";
-  const taxed = EU.has(o.country) && !intraEu;
-  if (m.options?.oss && taxed && o.country !== "PT") throw new Error(`OSS: encomenda para ${o.country}. Crie esta fatura manualmente com a taxa de IVA do país de destino.`);
+  // Canary Islands, Ceuta and Melilla are outside the EU VAT area: exports.
+  const taxed = EU.has(o.country) && !intraEu && !outsideEuVat(o.country, o.shipping_address?.postal);
+  // Issue date = the day the draft is sent to Moloni (Lisbon time).
+  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
+  const oss = Boolean(m.options?.oss && taxed && o.country !== "PT" && date >= (m.options.ossFrom ?? store.oss.from ?? "9999"));
+  const ossTax = oss ? m.setup.ossTaxes?.[o.country] : undefined;
+  if (oss && !ossTax) throw new Error(`OSS: falta a taxa de IVA de ${o.country} no Moloni.`);
+  const vatRate = ossTax ? ossTax.value : 23;
   const marketplaceTax = o.source === "etsy" ? o.vat : 0;
   const invoiceTotal = o.total - marketplaceTax;
   const shippingGross = o.shipping + (o.gift_wrap && o.source !== "etsy" ? store.giftWrapPrice : 0);
@@ -314,8 +323,8 @@ export async function createDraftInvoice(o: Order) {
   const coupon = Math.max(0, o.discount_amount);
   const k = (itemsTarget + coupon) / listTotal;
   const discountPct = itemsTarget + coupon > 0 ? Math.max(0, Math.min(100, r6((coupon / (itemsTarget + coupon)) * 100))) : 0;
-  const net = (gross: number) => (taxed ? r6(euro(gross) / 1.23) : r6(euro(gross)));
-  const lineTax = taxed ? { taxes: [{ tax_id: m.setup.tax23_id, value: 23, order: 1, cumulative: 0 }] } : { exemption_reason: intraEu ? "M16" : "M05" };
+  const net = (gross: number) => (taxed ? r6(euro(gross) / (1 + vatRate / 100)) : r6(euro(gross)));
+  const lineTax = taxed ? { taxes: [{ tax_id: ossTax?.tax_id ?? m.setup.tax23_id, value: vatRate, order: 1, cumulative: 0 }] } : { exemption_reason: intraEu ? "M16" : "M05" };
 
   const products: Record<string, unknown>[] = [];
   for (const it of o.order_items) {
@@ -334,8 +343,6 @@ export async function createDraftInvoice(o: Order) {
     products.push({ product_id: await ensureProduct("PORTES", "Portes de envio", m, taxed), name: "Portes de envio", qty: 1, price: net(shippingGross), discount: 0, order: products.length + 1, ...lineTax });
   }
 
-  // Issue date = the day the draft is sent to Moloni (Lisbon time).
-  const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
   const doc = await moloni<{ document_id: number }>("invoiceReceipts/insert", {
     company_id: m.company_id,
     date,
@@ -349,6 +356,7 @@ export async function createDraftInvoice(o: Order) {
     notes: [
       `Encomenda ${o.number}${o.source === "etsy" ? " (Etsy)" : ""}.`,
       o.tracking_number ? `Enviado por ${o.carrier ?? "transportadora"}, n.º de seguimento ${o.tracking_number}.` : "",
+      oss ? `IVA do Estado-Membro de destino (${o.country}, ${String(vatRate).replace(".", ",")}%), declarado no Balcão Único OSS – Regime União${" (" + (m.options?.ossNumber ?? store.oss.number) + ")"}.` : "",
       intraEu ? "Transmissão intracomunitária de bens — isento ao abrigo do artigo 14.º do RITI." : !taxed ? "Exportação de bens — isento ao abrigo do artigo 14.º do CIVA." : "",
       marketplaceTax ? `Imposto do país de destino (${euro(marketplaceTax).toFixed(2)} €) cobrado e entregue pela Etsy; não incluído nesta fatura.` : "",
     ]

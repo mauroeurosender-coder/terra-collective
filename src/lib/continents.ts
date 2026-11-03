@@ -45,5 +45,17 @@ export function regionOf(country: string, postal?: string | null): Region {
   return LOOKUP.get(c) ?? "OTHER";
 }
 
+/** Standard VAT rates of the other EU countries (same as the taxes created in Moloni). */
+export const EU_VAT: Record<string, number> = { AT: 20, BE: 21, BG: 20, HR: 25, CY: 19, CZ: 21, DK: 25, EE: 24, FI: 25.5, FR: 20, DE: 19, GR: 24, HU: 27, IE: 23, IT: 22, LV: 21, LT: 21, LU: 17, MT: 18, NL: 21, PL: 23, RO: 21, SK: 23, SI: 22, ES: 21, SE: 25 };
+
+/**
+ * Destination VAT rate (%) when a consumer sale falls under the OSS, else null.
+ * `date` is the invoice date (YYYY-MM-DD or ISO); OSS starts on store.oss.from.
+ */
+export function ossRate(country: string, date: string | null | undefined, ossFrom: string | null): number | null {
+  if (!ossFrom || !date || country === "PT" || !(country in EU_VAT)) return null;
+  return date.slice(0, 10) >= ossFrom ? EU_VAT[country] : null;
+}
+
 /** The EU threshold for distance sales to consumers in other EU countries (art. 59.º-C RITI / Directive 2006/112/EC art. 59c). */
 export const OSS_THRESHOLD = 1_000_000; // cents

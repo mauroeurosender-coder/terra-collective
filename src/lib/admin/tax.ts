@@ -1,8 +1,9 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mergeSettings } from "../settings";
-import { loadProfitOrders, orderProfit } from "./profit";
+import { loadProfitOrders, orderProfit, ossOf } from "./profit";
 import { purchaseRegime, selfAssessedVat } from "../vat-regime";
+import { store } from "../config";
 
 /**
  * Portuguese tax helpers for a self-employed seller (Category B, simplified regime)
@@ -34,6 +35,8 @@ export type VatSummary = {
   /** VAT charged by EU suppliers in their country — not deductible in Portugal. */
   foreignVat: { vat: number; docs: number };
   imports: { base: number; docs: number };
+  /** EU consumer sales under the OSS (Regime União): declared separately, not in the PT VAT return. */
+  oss: { countries: { country: string; rate: number; base: number; vat: number; orders: number }[]; base: number; vat: number; orders: number };
   output: number; // IVA liquidado
   input: number; // IVA dedutível
   balance: number; // > 0 to pay, < 0 credit
@@ -54,10 +57,18 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
   const p = mergeSettings(sets ?? []).profit;
 
   const sales = { taxedBase: 0, taxedVat: 0, exemptExports: 0, orders: 0, creditNotesBase: 0, creditNotesVat: 0 };
+  const ossMap = new Map<string, { country: string; rate: number; base: number; vat: number; orders: number }>();
   for (const o of orders) {
     const x = orderProfit(o, p);
     sales.orders++;
-    if (x.vatOwed > 0) {
+    const rate = ossOf(o);
+    if (rate != null && x.vatOwed > 0) {
+      const c = ossMap.get(o.country) ?? { country: o.country, rate, base: 0, vat: 0, orders: 0 };
+      c.base += x.revenue;
+      c.vat += x.vatOwed;
+      c.orders++;
+      ossMap.set(o.country, c);
+    } else if (x.vatOwed > 0) {
       sales.taxedBase += x.revenue;
       sales.taxedVat += x.vatOwed;
     } else sales.exemptExports += x.revenue;
@@ -131,7 +142,9 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
   const goods = [...byRate.entries()].sort((a, b) => b[0] - a[0]).map(([rate, v]) => ({ rate, ...v }));
   const output = sales.taxedVat - sales.creditNotesVat + intraEu.vat;
   const input = goods.reduce((n, g) => n + g.vat, 0) + other.vat;
-  const revenueExVat = sales.taxedBase + sales.exemptExports - sales.creditNotesBase;
+  const ossCountries = [...ossMap.values()].sort((a, b) => b.base - a.base);
+  const oss = { countries: ossCountries, base: ossCountries.reduce((n, c) => n + c.base, 0), vat: ossCountries.reduce((n, c) => n + c.vat, 0), orders: ossCountries.reduce((n, c) => n + c.orders, 0) };
+  const revenueExVat = sales.taxedBase + sales.exemptExports + oss.base - sales.creditNotesBase;
   // Self-employed selling goods: relevant income = 20% of sales; contribution 21.4% per month of 1/3 of the quarter.
   const relevant = Math.round(revenueExVat * 0.2);
   return {
@@ -140,6 +153,7 @@ export async function vatSummary(sb: SupabaseClient, q: string): Promise<VatSumm
     intraEu,
     foreignVat,
     imports,
+    oss,
     output,
     input,
     balance: output - input,
@@ -166,6 +180,13 @@ export function obligations(year: number): Obligation[] {
     const dy = n === 4 ? year : y;
     out.push({ key: `iva-dp-${y}-Q${n}`, date: iso(dy, month, 20), kind: "iva", title: `Declaração periódica de IVA · ${n}.º trimestre ${y}`, detail: "Entregar no Portal das Finanças (normalmente feito pelo contabilista)." });
     out.push({ key: `iva-pag-${y}-Q${n}`, date: iso(dy, month, 25), kind: "iva", title: `Pagamento do IVA · ${n}.º trimestre ${y}`, detail: "Se houver IVA a pagar, pagar com a referência da declaração." });
+  }
+  // OSS (Regime União) return + payment: by the end of the month after each quarter, even with no sales.
+  if (store.oss.from) {
+    for (const [m, prevQ, qy] of [[1, 4, year - 1], [4, 1, year], [7, 2, year], [10, 3, year]] as [number, number, number][]) {
+      if (iso(qy, prevQ * 3, lastDay(qy, prevQ * 3)) < store.oss.from) continue;
+      out.push({ key: `oss-${qy}-Q${prevQ}`, date: iso(year, m, lastDay(year, m)), kind: "iva", title: `Declaração OSS (Balcão Único) · ${prevQ}.º trimestre ${qy}`, detail: "Entregar e pagar no Portal das Finanças → IVA → Balcão Único (OSS), mesmo sem vendas. Valores por país em Contabilidade." });
+    }
   }
   // Social Security quarterly declaration: last day of Jan, Apr, Jul, Oct.
   for (const [m, prevQ, qy] of [[1, 4, year - 1], [4, 1, year], [7, 2, year], [10, 3, year]] as [number, number, number][]) {

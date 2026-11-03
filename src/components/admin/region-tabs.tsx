@@ -3,6 +3,7 @@
 import { useState } from "react";
 import clsx from "clsx";
 import { OSS_THRESHOLD, regionLabel, type Region } from "@/lib/continents";
+import { store } from "@/lib/config";
 import { BarList, eur } from "./ui";
 
 type Rows = { key: string; label: string; value: number; sub: string }[];
@@ -46,7 +47,9 @@ function OssMeter({ oss }: { oss: Oss }) {
         <div className={clsx("h-full rounded-full", over ? "bg-coral" : "bg-azulejo")} style={{ width: `${Math.max(1, pct)}%` }} />
       </div>
       <p className="mt-2 text-xs text-ink-soft">
-        {lastYearOver || over
+        {store.oss.from
+          ? `Registered for OSS (${store.oss.number}) since ${store.oss.from.split("-").reverse().join("/")}: EU consumer sales carry the buyer’s country VAT.`
+          : lastYearOver || over
           ? `Threshold passed${lastYearOver ? ` in ${oss.year - 1}` : ""}: charge the buyer's country VAT on EU sales and declare them in the OSS. Talk to your accountant.`
           : `${pct.toFixed(0)}% used · ${eur(OSS_THRESHOLD - oss.current)} left this year.`}{" "}
         EU sales to consumers outside Portugal, without VAT, all channels ({oss.orders} orders). {oss.year - 1}: {eur(oss.previous)}.

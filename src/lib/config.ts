@@ -18,6 +18,8 @@ export const store = {
   newsletterDiscountPercent: 10,
   giftWrapPrice: 400, // cents, EUR
   livroReclamacoesUrl: "https://www.livroreclamacoes.pt/Inicio/",
+  /** One-Stop Shop (Regime União): EU consumer sales invoiced from this date carry the destination country’s VAT. */
+  oss: { from: "2026-11-01", number: "PT264463790" } as { from: string | null; number: string },
 } as const;
 
 export const locales = ["en", "pt"] as const;

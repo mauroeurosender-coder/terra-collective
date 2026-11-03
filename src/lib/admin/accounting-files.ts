@@ -75,6 +75,7 @@ export async function summaryFiles(sb: SupabaseClient, key: string): Promise<{ n
         `VENDAS`,
         `  Base tributável a 23%: ${eur(vat.sales.taxedBase)} €   IVA liquidado: ${eur(vat.sales.taxedVat)} €`,
         `  Exportações isentas (art. 14.º CIVA): ${eur(vat.sales.exemptExports)} €`,
+        ...(vat.oss.orders ? [`  Vendas UE em OSS (declaração à parte): base ${eur(vat.oss.base)} €   IVA ${eur(vat.oss.vat)} €`, ...vat.oss.countries.map((c) => `    ${c.country} ${String(c.rate).replace(".", ",")}%: ${c.orders} encomendas, base ${eur(c.base)} €, IVA ${eur(c.vat)} €`)] : []),
         `  Notas de crédito emitidas: base ${eur(vat.sales.creditNotesBase)} €, IVA ${eur(vat.sales.creditNotesVat)} €`,
         ``,
         `COMPRAS (IVA dedutível)`,
