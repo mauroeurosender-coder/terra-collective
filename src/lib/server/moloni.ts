@@ -231,11 +231,11 @@ async function ensureCustomer(o: Order, m: MoloniData) {
   const vat = foreignVat ?? (o.nif && /^\d{9}$/.test(o.nif.replace(/\D/g, "")) ? o.nif.replace(/\D/g, "") : "999999990");
   if (vat !== "999999990") {
     const found = await moloni<{ customer_id: number }[]>("customers/getByVat", { company_id, vat });
-    if (found.length) return found[0].customer_id;
+    if (Array.isArray(found) && found[0]?.customer_id) return found[0].customer_id;
   }
   const number = `${o.source === "etsy" ? "ETSY" : o.source === "faire" ? "FAIRE" : "WEB"}-${(foreignVat ?? o.email).replace(/[^a-z0-9]/gi, "").slice(0, 20).toUpperCase()}`;
   const byNumber = await moloni<{ customer_id: number }[]>("customers/getByNumber", { company_id, number }).catch(() => []);
-  if (byNumber.length) return byNumber[0].customer_id;
+  if (Array.isArray(byNumber) && byNumber[0]?.customer_id) return byNumber[0].customer_id;
   const a = o.shipping_address ?? {};
   const name = a.company || [a.firstName, a.lastName].filter(Boolean).join(" ") || "Consumidor final";
   const r = await moloni<{ customer_id: number }>("customers/insert", {
@@ -266,6 +266,8 @@ async function ensureCustomer(o: Order, m: MoloniData) {
     delivery_method_id: 0,
     field_notes: "",
   });
+  // Like documents, Moloni can answer a failed insert with a list of field errors.
+  if (!r || Array.isArray(r) || !Number(r.customer_id)) throw new Error(`Moloni não criou o cliente: ${JSON.stringify(r).slice(0, 400)}`);
   return r.customer_id;
 }
 

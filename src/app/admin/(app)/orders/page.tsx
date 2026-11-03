@@ -6,7 +6,7 @@ import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { countries } from "@/lib/geo";
 import type { OrderStatus } from "@/lib/admin/types";
 import { EmptyState, NotConnected, PageHeader, StatusPill, TestBadge, eur } from "@/components/admin/ui";
-import { FinalizeInvoicesButton } from "@/components/admin/order-actions";
+import { FinalizeInvoicesButton, RetryFailedInvoicesButton } from "@/components/admin/order-actions";
 
 export const metadata = { title: "Orders" };
 
@@ -49,6 +49,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   ]);
   const countMap = Object.fromEntries(counts);
   // The finalise button acts on every draft, so show the true total, not the filtered page.
+  const failedInvoices = sp.invoice === "error" && session.role === "owner" ? ((await sb.from("orders").select("id", { count: "exact", head: true }).eq("invoice_status", "error")).count ?? 0) : 0;
   const drafts = sp.invoice === "draft" && session.role === "owner" ? ((await sb.from("orders").select("id", { count: "exact", head: true }).eq("invoice_status", "draft")).count ?? 0) : 0;
   const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE));
   const link = (patch: Record<string, string | number | undefined>) => {
@@ -59,6 +60,12 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   return (
     <div className="mx-auto max-w-[1280px]">
       <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<><Link href="/admin/orders/ctt" className="btn-outline min-h-10 py-2 text-sm"><Truck className="h-4 w-4" /> CTT shipping</Link><Link href="/admin/orders/new?channel=faire" className="btn-outline min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> Faire order</Link><Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link></>} />
+      {failedInvoices > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-coral/40 bg-coral-tint/40 p-4">
+          <p className="min-w-60 flex-1 text-sm">{failedInvoices} encomenda{failedInvoices === 1 ? "" : "s"} com erro ao criar o rascunho da fatura no Moloni. Veja o erro em cada encomenda, ou tente de novo para todas (só cria rascunhos).</p>
+          <RetryFailedInvoicesButton count={failedInvoices} />
+        </div>
+      )}
       {drafts > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-line/70 bg-paper p-4">
           <p className="min-w-60 flex-1 text-sm text-ink-soft">{drafts} rascunho{drafts === 1 ? "" : "s"} de fatura no Moloni. Se já os reviu (ou não precisam de revisão), emita-os todos de uma vez, pela ordem das datas.</p>

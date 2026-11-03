@@ -161,6 +161,28 @@ export async function createInvoiceDraft(orderId: string): Promise<Result> {
   }
 }
 
+/** Retries every order whose Moloni draft failed (owner only). Creates drafts, never final invoices. */
+export async function retryFailedInvoices(): Promise<Result> {
+  const session = await requireAdmin();
+  if (session.role !== "owner") return { ok: false, error: "Only the owner can create invoices." };
+  const sb = await supabaseServer();
+  const { data } = await sb.from("orders").select("id, number").eq("invoice_status", "error").order("shipped_at").limit(40);
+  const { retryInvoice } = await import("@/lib/server/moloni");
+  let done = 0;
+  const failed: string[] = [];
+  for (const o of data ?? []) {
+    try {
+      await retryInvoice(o.id);
+      done++;
+    } catch (e) {
+      failed.push(`${o.number}: ${(e as Error).message.slice(0, 160)}`);
+    }
+  }
+  revalidatePath("/admin/orders");
+  const ok = `${done} rascunho${done === 1 ? "" : "s"} criado${done === 1 ? "" : "s"}.`;
+  return failed.length ? { ok: false, error: `${ok} Com erro (${failed.length}): ${failed.slice(0, 3).join(" · ")}${failed.length > 3 ? " …" : ""}` } : { ok: true, message: ok };
+}
+
 /** Finalises Moloni drafts (one order, a list, or all). Owner only, after confirming; irreversible. */
 export async function finalizeInvoices(orderIds?: string[]): Promise<Result> {
   const session = await requireAdmin();

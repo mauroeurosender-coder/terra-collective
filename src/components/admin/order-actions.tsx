@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Printer, Truck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { addNote, createInvoiceDraft, deleteTestOrder, finalizeInvoices, markShipped, refundOrder, setStatus } from "@/app/admin/(app)/orders/actions";
+import { addNote, createInvoiceDraft, deleteTestOrder, finalizeInvoices, markShipped, refundOrder, retryFailedInvoices, setStatus } from "@/app/admin/(app)/orders/actions";
 import type { OrderStatus } from "@/lib/admin/types";
 
 type Msg = { kind: "ok" | "error"; text: string } | null;
@@ -183,6 +183,22 @@ export function InvoiceButton({ orderId, retry }: { orderId: string; retry: bool
         className="btn-outline min-h-9 py-1.5 text-sm"
       >
         {pending ? "A criar…" : retry ? "Tentar de novo" : "Criar rascunho no Moloni"}
+      </button>
+      <Feedback msg={msg} />
+    </div>
+  );
+}
+
+/** Recreates the Moloni drafts of every order whose invoice failed. */
+export function RetryFailedInvoicesButton({ count }: { count: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<Msg>(null);
+  if (!count) return null;
+  return (
+    <div>
+      <button type="button" disabled={pending} onClick={() => start(async () => { const r = await retryFailedInvoices(); setMsg(r.ok ? { kind: "ok", text: r.message ?? "Feito." } : { kind: "error", text: r.error }); router.refresh(); })} className="btn-outline min-h-9 py-1.5 text-sm">
+        {pending ? "A criar rascunhos…" : `Tentar de novo (${count})`}
       </button>
       <Feedback msg={msg} />
     </div>
