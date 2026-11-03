@@ -272,7 +272,7 @@ async function ensureCustomer(o: Order, m: MoloniData) {
   });
   let r = await insert(number);
   // Number taken by a customer Moloni won’t return (["4 number"]): use one tied to this order instead.
-  if (Array.isArray(r) && JSON.stringify(r).includes("number")) r = await insert(`${number.slice(0, 18)}-${o.number.replace(/\D/g, "").slice(-6)}`);
+  if (Array.isArray(r) && JSON.stringify(r).includes("number")) r = await insert(`${number.slice(0, 13)}-${o.number.replace(/\D/g, "").slice(-6)}`);
   // Like documents, Moloni can answer a failed insert with a list of field errors.
   if (!r || Array.isArray(r) || !Number(r.customer_id)) throw new Error(`Moloni não criou o cliente: ${JSON.stringify(r).slice(0, 400)}`);
   return r.customer_id;
