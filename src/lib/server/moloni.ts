@@ -367,6 +367,8 @@ export async function createDraftInvoice(o: Order) {
       .join(" "),
     status: 0, // draft — finalise in Moloni
   });
+  // Moloni sometimes answers with a list of field errors instead of { valid: 0 }.
+  if (!doc || Array.isArray(doc) || !Number(doc.document_id)) throw new Error(`Moloni não criou o rascunho: ${JSON.stringify(doc).slice(0, 400)}`);
   return doc.document_id;
 }
 
@@ -456,7 +458,13 @@ export async function syncInvoiceStatuses(limit = 60) {
   let deleted = 0;
   for (const o of orders ?? []) {
     const document_id = Number(o.invoice_ref);
-    if (!document_id) continue;
+    if (!document_id) {
+      // No real Moloni id (the insert silently failed): put the order back in the queue.
+      await sb.from("orders").update({ invoice_status: "deleted", invoice_ref: null }).eq("id", o.id).eq("invoice_status", "draft");
+      await sb.from("order_events").insert({ order_id: o.id, kind: "note", body: "O Moloni não confirmou o rascunho da fatura. A encomenda volta a ficar por faturar." });
+      deleted++;
+      continue;
+    }
     let doc: { document_id?: number; status?: number; number?: number; document_set_name?: string } | unknown[] | null = null;
     try {
       doc = await moloni<typeof doc>("invoiceReceipts/getOne", { company_id: m.company_id, document_id });
