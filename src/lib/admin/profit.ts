@@ -30,6 +30,7 @@ export type OrderRow = {
   fees_cost: number | null;
   duties_cost?: number | null;
   invoice_attempted_at?: string | null;
+  shipped_at?: string | null;
   order_items: {
     quantity: number;
     unit_price: number;
@@ -94,9 +95,9 @@ export const rateZone = (country: string): RateZone => (country === "PT" ? "PT" 
 
 export { rateFor };
 
-/** Destination VAT rate when the order is (or will be) invoiced under the OSS. */
-export const ossOf = (o: Pick<OrderRow, "country" | "created_at" | "invoice_attempted_at">) =>
-  ossRate(o.country, o.invoice_attempted_at ?? o.created_at, store.oss.from);
+/** Destination VAT rate when the sale falls under the OSS (by shipping date, as on the Moloni invoice). */
+export const ossOf = (o: Pick<OrderRow, "country" | "created_at" | "invoice_attempted_at" | "shipped_at">) =>
+  ossRate(o.country, o.shipped_at ? new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date(o.shipped_at)) : (o.invoice_attempted_at ?? o.created_at), store.oss.from);
 
 /** Profit for one order with the given default costs. All money in cents. */
 export function orderProfit(o: OrderRow, p: ProfitSettings): OrderProfit {
@@ -184,7 +185,7 @@ export type ProfitReport = {
 };
 
 const SELECT =
-  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, invoice_attempted_at, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g, options), products(slug, name, variants(cost, weight_g, options)))";
+  "id, number, created_at, source, status, country, subtotal, discount_amount, shipping, shipping_method, vat, total, refunded_amount, payment_method, shipping_cost, packaging_cost, fees_cost, duties_cost, invoice_ref, invoice_attempted_at, shipped_at, order_items(quantity, unit_price, variant_id, name, variant_label, variants(cost, weight_g, options), products(slug, name, variants(cost, weight_g, options)))";
 
 export async function loadProfitOrders(sb: SupabaseClient, from: Date, to: Date) {
   const rows: OrderRow[] = [];

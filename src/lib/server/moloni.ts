@@ -309,7 +309,10 @@ export async function createDraftInvoice(o: Order) {
   const taxed = EU.has(o.country) && !intraEu && !outsideEuVat(o.country, o.shipping_address?.postal);
   // Issue date = the day the draft is sent to Moloni (Lisbon time).
   const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
-  const oss = Boolean(m.options?.oss && taxed && o.country !== "PT" && date >= (m.options.ossFrom ?? store.oss.from ?? "9999"));
+  // OSS follows the date of the sale (shipping), so goods sent before the start keep PT VAT even if invoiced later.
+  const lisbon = (iso: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date(iso));
+  const saleDate = o.shipped_at ? lisbon(o.shipped_at) : date;
+  const oss = Boolean(m.options?.oss && taxed && o.country !== "PT" && saleDate >= (m.options.ossFrom ?? store.oss.from ?? "9999"));
   const ossTax = oss ? m.setup.ossTaxes?.[o.country] : undefined;
   if (oss && !ossTax) throw new Error(`OSS: falta a taxa de IVA de ${o.country} no Moloni.`);
   const vatRate = ossTax ? ossTax.value : 23;

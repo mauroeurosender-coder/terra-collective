@@ -115,7 +115,7 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
           ) : (
             <p className="text-sm text-ink-soft">Ainda sem vendas OSS neste trimestre. A declaração tem de ser entregue na mesma (a zeros).</p>
           )}
-          <p className="mt-3 text-xs text-ink-soft">Vendas a particulares noutros países da UE faturadas desde {store.oss.from?.split("-").reverse().join("/")}, com o IVA do país do comprador. Entregar e pagar até ao fim do mês seguinte ao trimestre em Portal das Finanças → IVA → Balcão Único (OSS). Confira com as faturas do Moloni antes de submeter.</p>
+          <p className="mt-3 text-xs text-ink-soft">Vendas a particulares noutros países da UE enviadas desde {store.oss.from?.split("-").reverse().join("/")}, com o IVA do país do comprador. Entregar e pagar até ao fim do mês seguinte ao trimestre em Portal das Finanças → IVA → Balcão Único (OSS). Confira com as faturas do Moloni antes de submeter.</p>
         </Card>
       )}
 
