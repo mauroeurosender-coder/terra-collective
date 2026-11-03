@@ -236,12 +236,16 @@ async function ensureCustomer(o: Order, m: MoloniData) {
   const number = `${o.source === "etsy" ? "ETSY" : o.source === "faire" ? "FAIRE" : "WEB"}-${(foreignVat ?? o.email).replace(/[^a-z0-9]/gi, "").slice(0, 20).toUpperCase()}`;
   const byNumber = await moloni<{ customer_id: number }[]>("customers/getByNumber", { company_id, number }).catch(() => []);
   if (Array.isArray(byNumber) && byNumber[0]?.customer_id) return byNumber[0].customer_id;
+  // getByNumber sometimes misses an existing customer: fall back to the general search.
+  const searched = await moloni<{ customer_id: number; number: string }[]>("customers/getBySearch", { company_id, search: number }).catch(() => []);
+  const hit = Array.isArray(searched) ? searched.find((c) => String(c.number).toUpperCase() === number) : undefined;
+  if (hit?.customer_id) return hit.customer_id;
   const a = o.shipping_address ?? {};
   const name = a.company || [a.firstName, a.lastName].filter(Boolean).join(" ") || "Consumidor final";
-  const r = await moloni<{ customer_id: number }>("customers/insert", {
+  const insert = async (num: string) => moloni<{ customer_id: number }>("customers/insert", {
     company_id,
     vat,
-    number,
+    number: num,
     name,
     language_id: o.locale === "pt" || o.country === "PT" ? s.language_pt : s.language_en,
     address: [a.address1, a.address2].filter(Boolean).join(", ") || "Desconhecido",
@@ -266,6 +270,9 @@ async function ensureCustomer(o: Order, m: MoloniData) {
     delivery_method_id: 0,
     field_notes: "",
   });
+  let r = await insert(number);
+  // Number taken by a customer Moloni won’t return (["4 number"]): use one tied to this order instead.
+  if (Array.isArray(r) && JSON.stringify(r).includes("number")) r = await insert(`${number.slice(0, 18)}-${o.number.replace(/\D/g, "").slice(-6)}`);
   // Like documents, Moloni can answer a failed insert with a list of field errors.
   if (!r || Array.isArray(r) || !Number(r.customer_id)) throw new Error(`Moloni não criou o cliente: ${JSON.stringify(r).slice(0, 400)}`);
   return r.customer_id;
