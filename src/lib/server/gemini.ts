@@ -107,3 +107,27 @@ export async function generateJson<T>(text: string, responseSchema: object, temp
     throw new Error("O Gemini devolveu uma resposta inválida. Tente novamente.");
   }
 }
+
+/** Reads a file (PDF or image) and returns JSON matching `responseSchema`. */
+export async function generateJsonFromFile<T>(file: Blob, mime: string, text: string, responseSchema: object): Promise<T> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY não está configurada.");
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const data = Buffer.from(await file.arrayBuffer()).toString("base64");
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ inline_data: { mime_type: mime, data } }, { text }] }],
+      generationConfig: { temperature: 0, response_mime_type: "application/json", response_schema: responseSchema },
+    }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`Gemini: ${j?.error?.message ?? res.status}`);
+  const out = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+  try {
+    return JSON.parse(out) as T;
+  } catch {
+    throw new Error("Couldn’t read the document. Fill in the order by hand.");
+  }
+}

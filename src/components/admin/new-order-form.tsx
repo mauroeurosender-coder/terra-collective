@@ -3,8 +3,8 @@
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState, useTransition } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
-import { createManualOrder, type ManualOrderInput } from "@/app/admin/(app)/orders/new/actions";
+import { FileUp, Loader2, Plus, Trash2 } from "lucide-react";
+import { createManualOrder, readOrderDocument, type ManualOrderInput, type ReadOrder } from "@/app/admin/(app)/orders/new/actions";
 import { Card, eur } from "./ui";
 
 export type PickerProduct = { id: string; name: string; image?: string; variants: { id: string; label: string; price: number; stock: number }[] };
@@ -30,7 +30,7 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
     channel: initialChannel, company: "", faireOrder: "", commissionPct: 15,
   });
   const faire = f.channel === "faire";
-  const [lines, setLines] = useState<{ productId: string; variantId: string; quantity: number; price: string }[]>([{ productId: "", variantId: "", quantity: 1, price: "" }]);
+  const [lines, setLines] = useState<{ productId: string; variantId: string; quantity: number; price: string; hint?: string }[]>([{ productId: "", variantId: "", quantity: 1, price: "" }]);
   const [shipping, setShipping] = useState("0");
   const [discount, setDiscount] = useState("0");
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -59,9 +59,42 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
       router.push(`/admin/orders/${r.id}`);
     });
 
+  /** Fills the form with what Gemini read from the document; unmatched items stay for the user to pick. */
+  const fill = (o: ReadOrder) => {
+    const isFaire = o.source === "faire";
+    const country = countries.some((c) => c.code === o.country?.toUpperCase()) ? o.country.toUpperCase() : f.country;
+    setF((p) => ({
+      ...p,
+      channel: isFaire ? "faire" : p.channel,
+      ...(isFaire ? { paid: true } : {}),
+      company: o.retailer_company || p.company,
+      faireOrder: o.faire_order_number || p.faireOrder,
+      firstName: o.first_name || p.firstName,
+      lastName: o.last_name || p.lastName,
+      email: o.email && !/\.invalid$/i.test(o.email) ? o.email : p.email,
+      phone: o.phone || p.phone,
+      address1: o.address || p.address1,
+      postal: o.postal_code || p.postal,
+      city: o.city || p.city,
+      nif: o.vat_number || p.nif,
+      country,
+      locale: country === "PT" ? "pt" : "en",
+    }));
+    if (o.shipping) setShipping(String(o.shipping));
+    if (o.discount) setDiscount(String(o.discount));
+    if (o.lines.length) {
+      setLines(o.lines.map((l) => {
+        const p = matchProduct(l.description, products);
+        const v = p ? matchVariant(l.description, p) : undefined;
+        return { productId: p?.id ?? "", variantId: v?.id ?? "", quantity: Math.max(1, Math.round(l.quantity) || 1), price: l.unit_price ? String(l.unit_price) : "", hint: l.description };
+      }));
+    }
+  };
+
   return (
     <div className="grid gap-4 pb-10 lg:grid-cols-[1.6fr_1fr]">
       <div className="min-w-0 space-y-4">
+        <DocumentReader onRead={fill} />
         <Card title="Channel">
           <div role="radiogroup" aria-label="Channel" className="grid grid-cols-2 gap-1.5">
             <button type="button" role="radio" aria-checked={!faire} onClick={() => set("channel", "manual")} className="chip min-h-10 text-sm">Direct sale (market, DM, transfer…)</button>
@@ -88,7 +121,8 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
                   <span className="relative hidden h-14 w-12 overflow-hidden rounded-lg bg-cream-deep sm:block">{p?.image && <Image src={p.image} alt="" fill sizes="48px" className="object-cover" />}</span>
                   <div>
                     <label className="label" htmlFor={`p-${i}`}>Product</label>
-                    <ProductSearch id={`p-${i}`} products={products} value={p} onPick={(np) => update({ productId: np.id, variantId: np.variants.find((x) => x.stock > 0)?.id ?? np.variants[0]?.id ?? "", price: "" })} />
+                    <ProductSearch id={`p-${i}`} products={products} value={p} onPick={(np) => update({ productId: np.id, variantId: np.variants.find((x) => x.stock > 0)?.id ?? np.variants[0]?.id ?? "", price: l.hint ? l.price : "" })} />
+                    {l.hint && <p className={`mt-1 truncate text-xs ${p ? "text-ink-soft" : "text-coral-ink"}`} title={l.hint}>{p ? "From document:" : "Not found, pick it:"} {l.hint}</p>}
                   </div>
                   <div>
                     <label className="label" htmlFor={`v-${i}`}>Variant</label>
@@ -251,5 +285,66 @@ function ProductSearch({ id, products, value, onPick }: { id: string; products: 
         </ul>
       )}
     </div>
+  );
+}
+
+const words = (t: string) => fold(t).split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+
+/** Best catalogue product for a line read from a document (shared words in the name), or none. */
+function matchProduct(desc: string, products: PickerProduct[]) {
+  const want = new Set(words(desc));
+  let best: PickerProduct | undefined;
+  let score = 0;
+  for (const p of products) {
+    const name = words(p.name);
+    const hits = name.filter((w) => want.has(w)).length;
+    const s = hits / Math.max(3, name.length);
+    if (hits >= 2 && s > score) {
+      best = p;
+      score = s;
+    }
+  }
+  return best;
+}
+
+function matchVariant(desc: string, p: PickerProduct) {
+  const want = new Set(words(desc));
+  const top = p.variants.map((v) => ({ v, hits: words(v.label).filter((w) => want.has(w)).length })).sort((a, b) => b.hits - a.hits)[0];
+  return top?.hits ? top.v : (p.variants.find((v) => v.stock > 0) ?? p.variants[0]);
+}
+
+/** Upload a Faire order (PDF or screenshot) and let Gemini fill in the form. */
+function DocumentReader({ onRead }: { onRead: (o: ReadOrder) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [drag, setDrag] = useState(false);
+  const read = async (file?: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.set("file", file);
+    const r = await readOrderDocument(fd).catch(() => ({ ok: false as const, error: "Upload failed. Try a smaller file or a screenshot." }));
+    setBusy(false);
+    if (!r.ok) return setMsg({ ok: false, text: r.error });
+    onRead(r.order);
+    const n = r.order.lines.length;
+    setMsg({ ok: true, text: `Read ${n} item${n === 1 ? "" : "s"}${r.order.currency && r.order.currency !== "EUR" ? ` (prices in ${r.order.currency}: convert them to euros)` : ""}. Check everything below before creating the order.` });
+  };
+  return (
+    <Card>
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); read(e.dataTransfer.files[0]); }}
+        className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-2xl border-2 border-dashed px-4 py-5 text-center text-sm ${drag ? "border-azulejo bg-azulejo-tint" : "border-line hover:bg-cream"}`}
+      >
+        {busy ? <Loader2 className="h-5 w-5 animate-spin text-azulejo" /> : <FileUp className="h-5 w-5 text-azulejo" />}
+        <span className="font-medium">{busy ? "Reading the document…" : "Fill from a document"}</span>
+        <span className="text-xs text-ink-soft">Drop or choose the Faire order PDF, a screenshot or a purchase order. The AI fills in the form; you check it.</span>
+        <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp,image/heic" className="sr-only" disabled={busy} onChange={(e) => { read(e.target.files?.[0]); e.target.value = ""; }} />
+      </label>
+      {msg && <p role="status" className={`mt-3 rounded-xl px-3 py-2 text-sm ${msg.ok ? "bg-olive-tint text-olive" : "bg-coral-tint text-coral-ink"}`}>{msg.text}</p>}
+    </Card>
   );
 }

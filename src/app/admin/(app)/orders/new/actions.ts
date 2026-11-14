@@ -118,3 +118,73 @@ export async function createManualOrder(f: ManualOrderInput): Promise<Result> {
   revalidatePath("/admin");
   return { ok: true, id: order.id, number: order.number };
 }
+
+export type ReadOrder = {
+  source: "faire" | "other";
+  faire_order_number: string;
+  retailer_company: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  address: string;
+  postal_code: string;
+  city: string;
+  country: string;
+  vat_number: string;
+  currency: string;
+  shipping: number;
+  discount: number;
+  lines: { description: string; quantity: number; unit_price: number }[];
+};
+
+const orderSchema = {
+  type: "OBJECT",
+  properties: {
+    source: { type: "STRING", enum: ["faire", "other"] },
+    faire_order_number: { type: "STRING" },
+    retailer_company: { type: "STRING" },
+    first_name: { type: "STRING" },
+    last_name: { type: "STRING" },
+    email: { type: "STRING" },
+    phone: { type: "STRING" },
+    address: { type: "STRING" },
+    postal_code: { type: "STRING" },
+    city: { type: "STRING" },
+    country: { type: "STRING" },
+    vat_number: { type: "STRING" },
+    currency: { type: "STRING" },
+    shipping: { type: "NUMBER" },
+    discount: { type: "NUMBER" },
+    lines: { type: "ARRAY", items: { type: "OBJECT", properties: { description: { type: "STRING" }, quantity: { type: "NUMBER" }, unit_price: { type: "NUMBER" } }, required: ["description", "quantity", "unit_price"] } },
+  },
+  required: ["source", "first_name", "last_name", "country", "lines"],
+};
+
+const orderPrompt = `This document is an order placed with a small Portuguese ceramics shop (the SELLER): usually a Faire wholesale order (PDF, packing slip, email or screenshot), sometimes another purchase order.
+Extract the BUYER and the items exactly as written. Rules:
+- source: "faire" if it is a Faire order, else "other". faire_order_number: the Faire order id (e.g. BNXYZ12345), else "".
+- retailer_company: the buyer shop or company name (for Faire, the retailer), else "".
+- first_name and last_name: the buyer contact person. address, postal_code, city: the SHIPPING address. country: ISO 3166-1 alpha-2 code (e.g. DE, FR, US).
+- vat_number: the buyer VAT or tax number if shown, else "".
+- lines: one per item: product description as written (include colour, size or variant), quantity, unit price per item WITHOUT VAT (the wholesale price for Faire).
+- shipping and discount: amounts charged to the buyer, 0 if not shown. currency: ISO code (EUR, USD...).
+- Never invent data: use "" or 0 when something is not in the document.`;
+
+/** Reads an order document (Faire PDF, screenshot, purchase order) with Gemini to pre-fill the new order form. */
+export async function readOrderDocument(form: FormData): Promise<{ ok: true; order: ReadOrder } | { ok: false; error: string }> {
+  await requireAdmin();
+  const file = form.get("file");
+  if (!(file instanceof Blob) || !file.size) return { ok: false, error: "Choose a file first." };
+  const mime = file.type || "application/pdf";
+  if (!/^(application\/pdf|image\/(png|jpeg|webp|heic|heif))$/.test(mime)) return { ok: false, error: "Upload a PDF or an image (PNG, JPG, WebP)." };
+  if (file.size > 8 * 1024 * 1024) return { ok: false, error: "The file is larger than 8 MB." };
+  const { geminiConfigured, generateJsonFromFile } = await import("@/lib/server/gemini");
+  if (!geminiConfigured()) return { ok: false, error: "Gemini isn’t configured (GEMINI_API_KEY)." };
+  try {
+    const order = await generateJsonFromFile<ReadOrder>(file, mime, orderPrompt, orderSchema);
+    return { ok: true, order: { ...order, lines: (order.lines ?? []).filter((l) => l.description) } };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}

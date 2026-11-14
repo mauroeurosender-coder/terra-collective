@@ -48,6 +48,8 @@ const nextConfig: NextConfig = {
     // Hostinger’s build machine reports many CPUs (Next started 63 workers) but caps processes/threads,
     // so builds crashed with "OS can’t spawn worker thread". Two workers fit comfortably.
     cpus: 2,
+    // Order documents (Faire PDFs, screenshots) are sent to a server action to be read.
+    serverActions: { bodySizeLimit: "10mb" },
     // Keep the dev cache in memory: this machine is low on disk space.
     turbopackFileSystemCacheForDev: false,
   },
