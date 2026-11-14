@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useRef, useState, useTransition } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { createManualOrder, type ManualOrderInput } from "@/app/admin/(app)/orders/new/actions";
 import { Card, eur } from "./ui";
@@ -88,10 +88,7 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
                   <span className="relative hidden h-14 w-12 overflow-hidden rounded-lg bg-cream-deep sm:block">{p?.image && <Image src={p.image} alt="" fill sizes="48px" className="object-cover" />}</span>
                   <div>
                     <label className="label" htmlFor={`p-${i}`}>Product</label>
-                    <select id={`p-${i}`} value={l.productId} onChange={(e) => { const np = products.find((x) => x.id === e.target.value); update({ productId: e.target.value, variantId: np?.variants[0]?.id ?? "", price: "" }); }} className="field py-2 text-sm">
-                      <option value="">Choose…</option>
-                      {products.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-                    </select>
+                    <ProductSearch id={`p-${i}`} products={products} value={p} onPick={(np) => update({ productId: np.id, variantId: np.variants.find((x) => x.stock > 0)?.id ?? np.variants[0]?.id ?? "", price: "" })} />
                   </div>
                   <div>
                     <label className="label" htmlFor={`v-${i}`}>Variant</label>
@@ -181,6 +178,78 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
         {error && <p role="alert" className="rounded-xl bg-coral-tint px-3 py-2 text-sm text-coral-ink">{error}</p>}
         <button type="button" onClick={submit} disabled={pending} className="btn-primary w-full">{pending && <Loader2 className="h-4 w-4 animate-spin" />} Create order · {eur(total, 2)}</button>
       </div>
+    </div>
+  );
+}
+
+const fold = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Type-to-search product picker: every word must match the name or a variant (accents ignored). */
+function ProductSearch({ id, products, value, onPick }: { id: string; products: PickerProduct[]; value?: PickerProduct; onPick: (p: PickerProduct) => void }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const listId = useId();
+  const input = useRef<HTMLInputElement>(null);
+  const results = useMemo(() => {
+    const words = fold(q).split(/\s+/).filter(Boolean);
+    if (!words.length) return products;
+    return products.filter((p) => {
+      const hay = fold(`${p.name} ${p.variants.map((v) => v.label).join(" ")}`);
+      return words.every((w) => hay.includes(w));
+    });
+  }, [q, products]);
+  const pick = (p: PickerProduct) => {
+    onPick(p);
+    setQ("");
+    setOpen(false);
+  };
+  return (
+    <div className="relative">
+      <input
+        ref={input}
+        id={id}
+        role="combobox"
+        aria-expanded={open}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        aria-activedescendant={open && results[active] ? `${listId}-${active}` : undefined}
+        autoComplete="off"
+        value={open ? q : (value?.name ?? "")}
+        placeholder="Type to search… e.g. sardine"
+        onFocus={() => { setOpen(true); setActive(0); }}
+        onBlur={() => setTimeout(() => setOpen(false), 120)}
+        onChange={(e) => { setQ(e.target.value); setOpen(true); setActive(0); }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, results.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
+          else if (e.key === "Enter" && open && results[active]) { e.preventDefault(); pick(results[active]); }
+          else if (e.key === "Escape") { setOpen(false); input.current?.blur(); }
+        }}
+        className="field py-2 text-sm"
+      />
+      {open && (
+        <ul id={listId} role="listbox" className="absolute z-20 mt-1 max-h-72 w-full min-w-64 overflow-y-auto rounded-xl border border-line bg-paper p-1 shadow-lg">
+          {results.length ? results.map((p, k) => {
+            const stock = p.variants.reduce((n, v) => n + Math.max(0, v.stock), 0);
+            return (
+              <li
+                key={p.id}
+                id={`${listId}-${k}`}
+                role="option"
+                aria-selected={k === active}
+                onMouseDown={(e) => { e.preventDefault(); pick(p); }}
+                onMouseEnter={() => setActive(k)}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${k === active ? "bg-cream" : ""}`}
+              >
+                <span className="relative h-8 w-7 shrink-0 overflow-hidden rounded bg-cream-deep">{p.image && <Image src={p.image} alt="" fill sizes="28px" className="object-cover" />}</span>
+                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className={`shrink-0 text-xs ${stock ? "text-ink-soft" : "text-coral-ink"}`}>{stock ? `${stock} in stock` : "sold out"}</span>
+              </li>
+            );
+          }) : <li className="px-2 py-2 text-sm text-ink-soft">No product matches “{q}”.</li>}
+        </ul>
+      )}
     </div>
   );
 }
