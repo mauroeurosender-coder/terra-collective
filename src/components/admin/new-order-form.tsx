@@ -84,8 +84,8 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
     if (o.discount) setDiscount(String(o.discount));
     if (o.lines.length) {
       setLines(o.lines.map((l) => {
-        const p = matchProduct(l.description, products);
-        const v = p ? matchVariant(l.description, p) : undefined;
+        const p = products.find((x) => x.id === l.product);
+        const v = p ? (p.variants.find((x) => x.id === l.variant) ?? p.variants.find((x) => x.stock > 0) ?? p.variants[0]) : undefined;
         return { productId: p?.id ?? "", variantId: v?.id ?? "", quantity: Math.max(1, Math.round(l.quantity) || 1), price: l.unit_price ? String(l.unit_price) : "", hint: l.description };
       }));
     }
@@ -117,16 +117,15 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
               const v = variantOf(l);
               const update = (patch: Partial<typeof l>) => setLines(lines.map((x, j) => (j === i ? { ...x, ...patch } : x)));
               return (
-                <li key={i} className="grid gap-2 rounded-2xl border border-line p-3 sm:grid-cols-[48px_1.4fr_1fr_80px_96px_auto] sm:items-end">
+                <li key={i} className="grid gap-2 rounded-2xl border border-line p-3 sm:grid-cols-[48px_minmax(0,1.4fr)_minmax(0,1fr)_80px_96px_auto] sm:items-end">
                   <span className="relative hidden h-14 w-12 overflow-hidden rounded-lg bg-cream-deep sm:block">{p?.image && <Image src={p.image} alt="" fill sizes="48px" className="object-cover" />}</span>
-                  <div>
+                  <div className="min-w-0">
                     <label className="label" htmlFor={`p-${i}`}>Product</label>
                     <ProductSearch id={`p-${i}`} products={products} value={p} onPick={(np) => update({ productId: np.id, variantId: np.variants.find((x) => x.stock > 0)?.id ?? np.variants[0]?.id ?? "", price: l.hint ? l.price : "" })} />
-                    {l.hint && <p className={`mt-1 truncate text-xs ${p ? "text-ink-soft" : "text-coral-ink"}`} title={l.hint}>{p ? "From document:" : "Not found, pick it:"} {l.hint}</p>}
                   </div>
                   <div>
                     <label className="label" htmlFor={`v-${i}`}>Variant</label>
-                    <select id={`v-${i}`} value={l.variantId} onChange={(e) => update({ variantId: e.target.value, price: "" })} disabled={!p} className="field py-2 text-sm">
+                    <select id={`v-${i}`} value={l.variantId} onChange={(e) => update({ variantId: e.target.value, price: l.hint ? l.price : "" })} disabled={!p} className="field py-2 text-sm">
                       {p?.variants.map((x) => <option key={x.id} value={x.id} disabled={x.stock <= 0}>{x.label || "Default"} · {x.stock > 0 ? `${x.stock} left` : "sold out"}</option>)}
                     </select>
                   </div>
@@ -139,6 +138,7 @@ export function NewOrderForm({ products, countries, initialChannel = "manual" }:
                     <input id={`pr-${i}`} inputMode="decimal" placeholder={v ? (v.price / 100).toFixed(2) : ""} value={l.price} onChange={(e) => update({ price: e.target.value })} className="field py-2 text-sm tabular-nums" />
                   </div>
                   <button type="button" onClick={() => setLines(lines.length > 1 ? lines.filter((_, j) => j !== i) : lines)} aria-label="Remove line" className="grid h-10 w-10 place-items-center self-end rounded-full text-coral-ink hover:bg-coral-tint"><Trash2 className="h-4 w-4" /></button>
+                  {l.hint && <p className={`min-w-0 truncate text-xs sm:col-[2/-1] ${p ? "text-ink-soft" : "text-coral-ink"}`} title={l.hint}>{p ? "From document:" : "Not in the catalogue, pick it:"} {l.hint}</p>}
                 </li>
               );
             })}
@@ -286,31 +286,6 @@ function ProductSearch({ id, products, value, onPick }: { id: string; products: 
       )}
     </div>
   );
-}
-
-const words = (t: string) => fold(t).split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-
-/** Best catalogue product for a line read from a document (shared words in the name), or none. */
-function matchProduct(desc: string, products: PickerProduct[]) {
-  const want = new Set(words(desc));
-  let best: PickerProduct | undefined;
-  let score = 0;
-  for (const p of products) {
-    const name = words(p.name);
-    const hits = name.filter((w) => want.has(w)).length;
-    const s = hits / Math.max(3, name.length);
-    if (hits >= 2 && s > score) {
-      best = p;
-      score = s;
-    }
-  }
-  return best;
-}
-
-function matchVariant(desc: string, p: PickerProduct) {
-  const want = new Set(words(desc));
-  const top = p.variants.map((v) => ({ v, hits: words(v.label).filter((w) => want.has(w)).length })).sort((a, b) => b.hits - a.hits)[0];
-  return top?.hits ? top.v : (p.variants.find((v) => v.stock > 0) ?? p.variants[0]);
 }
 
 /** Upload a Faire order (PDF or screenshot) and let Gemini fill in the form. */

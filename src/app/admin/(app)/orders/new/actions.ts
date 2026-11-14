@@ -135,7 +135,8 @@ export type ReadOrder = {
   currency: string;
   shipping: number;
   discount: number;
-  lines: { description: string; quantity: number; unit_price: number }[];
+  /** product/variant: catalogue ids matched by Gemini ("" when nothing in the catalogue fits). */
+  lines: { description: string; quantity: number; unit_price: number; product: string; variant: string }[];
 };
 
 const orderSchema = {
@@ -156,7 +157,7 @@ const orderSchema = {
     currency: { type: "STRING" },
     shipping: { type: "NUMBER" },
     discount: { type: "NUMBER" },
-    lines: { type: "ARRAY", items: { type: "OBJECT", properties: { description: { type: "STRING" }, quantity: { type: "NUMBER" }, unit_price: { type: "NUMBER" } }, required: ["description", "quantity", "unit_price"] } },
+    lines: { type: "ARRAY", items: { type: "OBJECT", properties: { description: { type: "STRING" }, quantity: { type: "NUMBER" }, unit_price: { type: "NUMBER" }, product_ref: { type: "STRING" }, variant_ref: { type: "STRING" } }, required: ["description", "quantity", "unit_price", "product_ref", "variant_ref"] } },
   },
   required: ["source", "first_name", "last_name", "country", "lines"],
 };
@@ -169,7 +170,8 @@ Extract the BUYER and the items exactly as written. Rules:
 - vat_number: the buyer VAT or tax number if shown, else "".
 - lines: one per item: product description as written (include colour, size or variant), quantity, unit price per item WITHOUT VAT (the wholesale price for Faire).
 - shipping and discount: amounts charged to the buyer, 0 if not shown. currency: ISO code (EUR, USD...).
-- Never invent data: use "" or 0 when something is not in the document.`;
+- Never invent data: use "" or 0 when something is not in the document.
+- product_ref and variant_ref: match each line to the shop CATALOGUE below (refs like P3 and P3.2). Match on what the item IS (e.g. snail, seahorse, sardine, wine stopper), not on shared words like ceramic, handmade or colourful. Pick the variant whose label fits the colour, size or option in the line. If no catalogue product is the same kind of item, use "" for both: never guess.`;
 
 /** Reads an order document (Faire PDF, screenshot, purchase order) with Gemini to pre-fill the new order form. */
 export async function readOrderDocument(form: FormData): Promise<{ ok: true; order: ReadOrder } | { ok: false; error: string }> {
@@ -182,8 +184,27 @@ export async function readOrderDocument(form: FormData): Promise<{ ok: true; ord
   const { geminiConfigured, generateJsonFromFile } = await import("@/lib/server/gemini");
   if (!geminiConfigured()) return { ok: false, error: "Gemini isn’t configured (GEMINI_API_KEY)." };
   try {
-    const order = await generateJsonFromFile<ReadOrder>(file, mime, orderPrompt, orderSchema);
-    return { ok: true, order: { ...order, lines: (order.lines ?? []).filter((l) => l.description) } };
+    // The catalogue goes in the prompt with short refs, so Gemini can match each line to a product and variant.
+    const { data: ps } = await supabaseService().from("products").select("id, name, variants(id, options)").neq("status", "archived").order("created_at");
+    const refs = new Map<string, { product: string; variant: string }>();
+    const catalogue = ((ps ?? []) as { id: string; name: { en: string }; variants: { id: string; options: Record<string, string> | null }[] }[])
+      .map((p, i) => {
+        refs.set(`P${i + 1}`, { product: p.id, variant: "" });
+        const vs = p.variants.map((v, j) => {
+          refs.set(`P${i + 1}.${j + 1}`, { product: p.id, variant: v.id });
+          return `P${i + 1}.${j + 1} ${Object.values(v.options ?? {}).join(" / ") || "default"}`;
+        });
+        return `P${i + 1} ${p.name.en} [${vs.join("; ")}]`;
+      })
+      .join("\n");
+    type Raw = Omit<ReadOrder, "lines"> & { lines: { description: string; quantity: number; unit_price: number; product_ref: string; variant_ref: string }[] };
+    const raw = await generateJsonFromFile<Raw>(file, mime, `${orderPrompt}\n\nCATALOGUE:\n${catalogue}`, orderSchema);
+    const lines = (raw.lines ?? []).filter((l) => l.description).map(({ product_ref, variant_ref, ...l }) => {
+      const p = refs.get(product_ref?.trim() ?? "");
+      const v = refs.get(variant_ref?.trim() ?? "");
+      return { ...l, product: p?.product ?? "", variant: v && v.product === p?.product ? v.variant : "" };
+    });
+    return { ok: true, order: { ...raw, lines } };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
