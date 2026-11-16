@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { packLines, type PackLine } from "./pack-names";
 
 /** One order as it appears on the pack list: who, where, what they paid and what goes in the box. */
 export type PackOrder = {
@@ -13,7 +14,8 @@ export type PackOrder = {
   paid: number;
   createdAt: string;
   shippedAt: string | null;
-  items: { name: string; variant: string; qty: number }[];
+  /** Short names, with sets counted as pieces ("Set of Six Sardines" ×1 → 6). */
+  items: PackLine[];
 };
 
 type Row = {
@@ -45,7 +47,7 @@ const toPack = (o: Row): PackOrder => {
     paid: o.total - o.refunded_amount - (o.source === "etsy" ? (o.vat ?? 0) : 0),
     createdAt: o.created_at,
     shippedAt: o.shipped_at,
-    items: o.order_items.map((i) => ({ name: i.name, variant: i.variant_label ?? "", qty: i.quantity })),
+    items: o.order_items.flatMap((i) => packLines(i.name, i.variant_label ?? "", i.quantity)),
   };
 };
 
