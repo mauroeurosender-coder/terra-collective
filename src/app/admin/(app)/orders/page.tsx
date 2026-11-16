@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { Plus, Search, Truck } from "lucide-react";
+import { ClipboardList, Plus, Search, Truck } from "lucide-react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { countries } from "@/lib/geo";
@@ -59,7 +59,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
   return (
     <div className="mx-auto max-w-[1280px]">
-      <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<><Link href="/admin/orders/ctt" className="btn-outline min-h-10 py-2 text-sm"><Truck className="h-4 w-4" /> CTT shipping</Link><Link href="/admin/orders/new?channel=faire" className="btn-outline min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> Faire order</Link><Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link></>} />
+      <PageHeader title="Orders" subtitle={`${count ?? 0} ${tab.label.toLowerCase()}`} actions={<><Link href="/admin/orders/pack-list" className="btn-outline min-h-10 py-2 text-sm"><ClipboardList className="h-4 w-4" /> Pack list</Link><Link href="/admin/orders/ctt" className="btn-outline min-h-10 py-2 text-sm"><Truck className="h-4 w-4" /> CTT shipping</Link><Link href="/admin/orders/new?channel=faire" className="btn-outline min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> Faire order</Link><Link href="/admin/orders/new" className="btn-primary min-h-10 py-2 text-sm"><Plus className="h-4 w-4" /> New order</Link></>} />
       {failedInvoices > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[var(--radius-card)] border border-coral/40 bg-coral-tint/40 p-4">
           <p className="min-w-60 flex-1 text-sm">{failedInvoices} encomenda{failedInvoices === 1 ? "" : "s"} com erro ao criar o rascunho da fatura no Moloni. Veja o erro em cada encomenda, ou tente de novo para todas (só cria rascunhos).</p>
