@@ -49,3 +49,4 @@ next-env.d.ts
 
 # Local Claude Code skills (not part of the website)
 /.claude/
+.samples/
