@@ -1,6 +1,6 @@
 import Link from "next/link";
 import clsx from "clsx";
-import { ChevronLeft, ChevronRight, Download, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, FileSpreadsheet, Info } from "lucide-react";
 import { requireAdmin } from "@/lib/admin/auth";
 import { supabaseConfigured, supabaseServer } from "@/lib/supabase/server";
 import { geminiConfigured } from "@/lib/server/gemini";
@@ -46,7 +46,8 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
             <Link href={`?q=${shiftQuarter(q.key, -1)}`} aria-label="Trimestre anterior" className="grid h-10 w-10 place-items-center rounded-full border border-line bg-paper hover:bg-cream"><ChevronLeft className="h-4 w-4" /></Link>
             <span className="min-w-36 text-center font-semibold">{q.label}</span>
             <Link href={`?q=${shiftQuarter(q.key, 1)}`} aria-label="Trimestre seguinte" className="grid h-10 w-10 place-items-center rounded-full border border-line bg-paper hover:bg-cream"><ChevronRight className="h-4 w-4" /></Link>
-            <a download href={`/admin/accounting/export?q=${q.key}`} className="btn-primary min-h-10 py-2 text-sm"><Download className="h-4 w-4" /> Pasta do trimestre (ZIP)</a>
+            <a download href={`/admin/accounting/excel?q=${q.key}`} className="btn-primary min-h-10 py-2 text-sm" title="Vendas, IVA por país (OSS), compras por fornecedor e notas de crédito num só ficheiro"><FileSpreadsheet className="h-4 w-4" /> Excel do trimestre</a>
+            <a download href={`/admin/accounting/export?q=${q.key}`} className="btn-outline min-h-10 py-2 text-sm"><Download className="h-4 w-4" /> Pasta do trimestre (ZIP)</a>
           </div>
         }
       />
