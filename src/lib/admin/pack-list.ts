@@ -13,7 +13,10 @@ export type PackOrder = {
   /** What the customer paid for the order (cents), without refunds or tax a marketplace (Etsy) keeps. */
   paid: number;
   createdAt: string;
+  /** Ship date as set on Etsy (can be a later day than when the order was marked shipped). */
   shippedAt: string | null;
+  /** When the order was marked shipped (first "shipped" event); falls back to shippedAt. */
+  markedAt: string | null;
   /** Short names, with sets counted as pieces ("Set of Six Sardines" ×1 → 6). */
   items: PackLine[];
 };
@@ -47,6 +50,7 @@ const toPack = (o: Row): PackOrder => {
     paid: o.total - o.refunded_amount - (o.source === "etsy" ? (o.vat ?? 0) : 0),
     createdAt: o.created_at,
     shippedAt: o.shipped_at,
+    markedAt: o.shipped_at,
     items: o.order_items.flatMap((i) => packLines(i.name, i.variant_label ?? "", i.quantity)),
   };
 };
@@ -54,11 +58,33 @@ const toPack = (o: Row): PackOrder => {
 /** Orders to fulfil (all) and shipped in the last `shippedDays` days, for choosing what to print. */
 export async function loadPackCandidates(sb: SupabaseClient, shippedDays = 30) {
   const since = new Date(Date.now() - shippedDays * 86_400_000).toISOString();
-  const [{ data: open }, { data: shipped }] = await Promise.all([
+  // Supabase returns at most 1,000 rows per request: read long ranges in pages.
+  const shippedSince = async () => {
+    const out: Row[] = [];
+    for (let from = 0; ; from += 1000) {
+      const { data } = await sb.from("orders").select(SELECT).eq("test", false).in("status", ["shipped", "delivered"]).gte("shipped_at", since).order("shipped_at", { ascending: false }).range(from, from + 999);
+      out.push(...((data ?? []) as Row[]));
+      if (!data || data.length < 1000) return out;
+    }
+  };
+  const [{ data: open }, shipped] = await Promise.all([
     sb.from("orders").select(SELECT).eq("test", false).in("status", ["paid", "packing"]).order("created_at"),
-    sb.from("orders").select(SELECT).eq("test", false).eq("status", "shipped").gte("shipped_at", since).order("shipped_at", { ascending: false }),
+    shippedSince(),
   ]);
-  return { open: ((open ?? []) as Row[]).map(toPack), shipped: ((shipped ?? []) as Row[]).map(toPack) };
+  const list = shipped.map(toPack);
+  // Etsy stores the ship date chosen when marking (often tomorrow or later); the order log knows when it was really marked.
+  const ids = list.map((o) => o.id);
+  const marked = new Map<string, string>();
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data } = await sb.from("order_events").select("order_id, created_at").in("order_id", ids.slice(i, i + 150)).eq("kind", "status").ilike("body", "%shipped%").order("created_at");
+    for (const e of (data ?? []) as { order_id: string; created_at: string }[]) if (!marked.has(e.order_id)) marked.set(e.order_id, e.created_at);
+  }
+  for (const o of list) {
+    const m = marked.get(o.id);
+    if (m && (!o.shippedAt || m < o.shippedAt)) o.markedAt = m;
+  }
+  list.sort((a, b) => (b.markedAt ?? "").localeCompare(a.markedAt ?? ""));
+  return { open: ((open ?? []) as Row[]).map(toPack), shipped: list };
 }
 
 export async function loadPackOrders(sb: SupabaseClient, ids: string[]) {
